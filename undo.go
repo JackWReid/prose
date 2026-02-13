@@ -4,11 +4,12 @@ package main
 type OpType int
 
 const (
-	OpInsertChar  OpType = iota // Inserted a character
-	OpDeleteChar                // Deleted a character
-	OpInsertLine                // Inserted a newline (split line)
-	OpDeleteLine                // Deleted a newline (joined lines)
-	OpInsertChars               // Coalesced group of character inserts
+	OpInsertChar      OpType = iota // Inserted a character
+	OpDeleteChar                    // Deleted a character
+	OpInsertLine                    // Inserted a newline (split line)
+	OpDeleteLine                    // Deleted a newline (joined lines)
+	OpInsertChars                   // Coalesced group of character inserts
+	OpDeleteWholeLine               // Deleted an entire line (dd)
 )
 
 // UndoOp represents a single undoable operation or a coalesced group.
@@ -100,6 +101,18 @@ func (u *UndoStack) PushDeleteLine(line, col int, cursorLine, cursorCol int) {
 	})
 }
 
+// PushDeleteWholeLine records a whole line deletion (dd operation).
+func (u *UndoStack) PushDeleteWholeLine(line int, content string, cursorLine, cursorCol int) {
+	u.flushCoalesce()
+	u.ops = append(u.ops, UndoOp{
+		Type:       OpDeleteWholeLine,
+		Line:       line,
+		Text:       content,
+		CursorLine: cursorLine,
+		CursorCol:  cursorCol,
+	})
+}
+
 // flushCoalesce converts the current coalescing state into an UndoOp.
 func (u *UndoStack) flushCoalesce() {
 	if u.coalesce == nil {
@@ -172,6 +185,17 @@ func (u *UndoStack) Undo(buf *Buffer) (line, col int, ok bool) {
 	case OpDeleteLine:
 		// Undo newline delete: split the line again.
 		buf.InsertNewline(op.Line, op.Col)
+		return op.CursorLine, op.CursorCol, true
+
+	case OpDeleteWholeLine:
+		// Undo whole line delete: re-insert the line.
+		// Special case: if buffer has one empty line, replace it.
+		if len(buf.Lines) == 1 && buf.Lines[0] == "" {
+			buf.Lines[0] = op.Text
+			buf.Dirty = true
+		} else {
+			buf.InsertLine(op.Line, op.Text)
+		}
 		return op.CursorLine, op.CursorCol, true
 	}
 

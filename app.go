@@ -27,7 +27,8 @@ type App struct {
 	picker    *Picker
 	mode      Mode
 
-	leaderPending bool  // Space was pressed, awaiting second key.
+	leaderPending bool // Space was pressed, awaiting second key.
+	dPending      bool // 'd' was pressed, awaiting second 'd' for dd.
 	quit          bool
 	quitAfterSave bool // Set by :wq on unnamed buffers.
 }
@@ -140,6 +141,17 @@ func (a *App) handleDefaultKey(key Key) {
 		return
 	}
 
+	// dd operator: 'd' followed by 'd'.
+	if a.dPending {
+		a.dPending = false
+		if key.Type == KeyRune && key.Rune == 'd' {
+			a.deleteWholeLine()
+			return
+		}
+		// Not 'dd' — consume the key and cancel.
+		return
+	}
+
 	eb := a.currentBuf()
 	switch key.Type {
 	case KeyRune:
@@ -162,15 +174,52 @@ func (a *App) handleDefaultKey(key Key) {
 			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 			a.insertNewline()
 			a.mode = ModeEdit
+		case 'd':
+			a.dPending = true
+		case 'A':
+			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
+			a.mode = ModeEdit
+		case '^':
+			// Jump to first non-whitespace character.
+			runes := []rune(eb.buf.Lines[eb.cursorLine])
+			for i, r := range runes {
+				if r != ' ' && r != '\t' {
+					eb.cursorCol = i
+					return
+				}
+			}
+			eb.cursorCol = 0
+		case '$':
+			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 		}
 	case KeyUp, KeyDown, KeyLeft, KeyRight:
 		a.moveCursor(key.Type)
+	case KeyHome:
+		eb.cursorCol = 0
+	case KeyEnd:
+		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
+	case KeyCtrlD:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollDown(visibleLines / 2)
+	case KeyCtrlU:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollUp(visibleLines / 2)
+	case KeyPgDn:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollDown(visibleLines)
+	case KeyPgUp:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollUp(visibleLines)
 	case KeyCtrlZ:
 		a.undoAction()
 	}
 }
 
 func (a *App) handleEditKey(key Key) {
+	// Clear any pending operators from Default mode.
+	a.dPending = false
+
+	eb := a.currentBuf()
 	switch key.Type {
 	case KeyEscape:
 		a.mode = ModeDefault
@@ -180,8 +229,26 @@ func (a *App) handleEditKey(key Key) {
 		a.insertNewline()
 	case KeyBackspace:
 		a.deleteChar()
+	case KeyDelete:
+		a.deleteCharForward()
 	case KeyUp, KeyDown, KeyLeft, KeyRight:
 		a.moveCursor(key.Type)
+	case KeyHome:
+		eb.cursorCol = 0
+	case KeyEnd:
+		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
+	case KeyCtrlD:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollDown(visibleLines / 2)
+	case KeyCtrlU:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollUp(visibleLines / 2)
+	case KeyPgDn:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollDown(visibleLines)
+	case KeyPgUp:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollUp(visibleLines)
 	case KeyCtrlZ:
 		a.undoAction()
 	}
@@ -442,6 +509,65 @@ func (a *App) undoAction() {
 	if ok {
 		eb.cursorLine = line
 		eb.cursorCol = col
+	}
+}
+
+// deleteWholeLine deletes the entire current line (dd operation).
+func (a *App) deleteWholeLine() {
+	eb := a.currentBuf()
+	content := eb.buf.DeleteLine(eb.cursorLine)
+	eb.undo.PushDeleteWholeLine(eb.cursorLine, content, eb.cursorLine, eb.cursorCol)
+
+	// Clamp cursor position after deletion.
+	if eb.cursorLine >= eb.buf.LineCount() {
+		eb.cursorLine = eb.buf.LineCount() - 1
+	}
+	if eb.cursorCol > eb.buf.LineLen(eb.cursorLine) {
+		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
+	}
+}
+
+// deleteCharForward deletes the character at the cursor position (Del key).
+func (a *App) deleteCharForward() {
+	eb := a.currentBuf()
+	lineLen := eb.buf.LineLen(eb.cursorLine)
+
+	if eb.cursorCol < lineLen {
+		// Delete character at cursor position.
+		ch := eb.buf.DeleteCharForward(eb.cursorLine, eb.cursorCol)
+		if ch != 0 {
+			eb.undo.PushDeleteChar(eb.cursorLine, eb.cursorCol, ch, eb.cursorLine, eb.cursorCol)
+		}
+	} else if eb.cursorLine < eb.buf.LineCount()-1 {
+		// At end of line: join with next line.
+		eb.buf.JoinLines(eb.cursorLine)
+		eb.undo.PushDeleteLine(eb.cursorLine, lineLen, eb.cursorLine, eb.cursorCol)
+	}
+}
+
+// scrollDown moves the cursor down by n lines.
+func (a *App) scrollDown(n int) {
+	eb := a.currentBuf()
+	eb.cursorLine += n
+	if eb.cursorLine >= eb.buf.LineCount() {
+		eb.cursorLine = eb.buf.LineCount() - 1
+	}
+	// Clamp column to new line length.
+	if eb.cursorCol > eb.buf.LineLen(eb.cursorLine) {
+		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
+	}
+}
+
+// scrollUp moves the cursor up by n lines.
+func (a *App) scrollUp(n int) {
+	eb := a.currentBuf()
+	eb.cursorLine -= n
+	if eb.cursorLine < 0 {
+		eb.cursorLine = 0
+	}
+	// Clamp column to new line length.
+	if eb.cursorCol > eb.buf.LineLen(eb.cursorLine) {
+		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 	}
 }
 

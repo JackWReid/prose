@@ -156,3 +156,53 @@ func TestUndoDeleteLine(t *testing.T) {
 		t.Errorf("cursor: (%d, %d)", line, col)
 	}
 }
+
+func TestUndoDeleteWholeLine(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"first", "second", "third"}
+	undo := NewUndoStack()
+
+	// Delete the middle line (dd operation).
+	content := buf.DeleteLine(1)
+	undo.PushDeleteWholeLine(1, content, 1, 0)
+
+	if len(buf.Lines) != 2 || buf.Lines[0] != "first" || buf.Lines[1] != "third" {
+		t.Fatalf("after delete whole line: %v", buf.Lines)
+	}
+
+	line, col, ok := undo.Undo(buf)
+	if !ok {
+		t.Fatal("undo should succeed")
+	}
+	if len(buf.Lines) != 3 || buf.Lines[0] != "first" || buf.Lines[1] != "second" || buf.Lines[2] != "third" {
+		t.Errorf("after undo delete whole line: %v", buf.Lines)
+	}
+	if line != 1 || col != 0 {
+		t.Errorf("cursor: (%d, %d)", line, col)
+	}
+}
+
+func TestUndoDeleteWholeLineSingle(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"only line"}
+	undo := NewUndoStack()
+
+	// Delete the only line (should clear it).
+	content := buf.DeleteLine(0)
+	undo.PushDeleteWholeLine(0, content, 0, 0)
+
+	if len(buf.Lines) != 1 || buf.Lines[0] != "" {
+		t.Fatalf("after delete single line: %v", buf.Lines)
+	}
+
+	line, col, ok := undo.Undo(buf)
+	if !ok {
+		t.Fatal("undo should succeed")
+	}
+	if len(buf.Lines) != 1 || buf.Lines[0] != "only line" {
+		t.Errorf("after undo single line delete: %v", buf.Lines)
+	}
+	if line != 0 || col != 0 {
+		t.Errorf("cursor: (%d, %d)", line, col)
+	}
+}

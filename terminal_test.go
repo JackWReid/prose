@@ -104,3 +104,50 @@ func TestParseKeyMultibyteUTF8(t *testing.T) {
 		t.Errorf("expected rune é, got type=%d rune=%c", k.Type, k.Rune)
 	}
 }
+
+func TestParseKeyCtrlD(t *testing.T) {
+	k := parseKey([]byte{4})
+	if k.Type != KeyCtrlD {
+		t.Errorf("expected ctrl-d, got type=%d", k.Type)
+	}
+}
+
+func TestParseKeyCtrlU(t *testing.T) {
+	k := parseKey([]byte{21})
+	if k.Type != KeyCtrlU {
+		t.Errorf("expected ctrl-u, got type=%d", k.Type)
+	}
+}
+
+func TestParseKeyHomeEnd3Byte(t *testing.T) {
+	// Home: ESC [ H
+	k := parseKey([]byte{27, '[', 'H'})
+	if k.Type != KeyHome {
+		t.Errorf("expected home (3-byte), got type=%d", k.Type)
+	}
+	// End: ESC [ F
+	k = parseKey([]byte{27, '[', 'F'})
+	if k.Type != KeyEnd {
+		t.Errorf("expected end (3-byte), got type=%d", k.Type)
+	}
+}
+
+func TestParseKeyCSI4Byte(t *testing.T) {
+	tests := []struct {
+		seq      []byte
+		expected int
+		name     string
+	}{
+		{[]byte{27, '[', '1', '~'}, KeyHome, "home"},
+		{[]byte{27, '[', '3', '~'}, KeyDelete, "delete"},
+		{[]byte{27, '[', '4', '~'}, KeyEnd, "end"},
+		{[]byte{27, '[', '5', '~'}, KeyPgUp, "pgup"},
+		{[]byte{27, '[', '6', '~'}, KeyPgDn, "pgdn"},
+	}
+	for _, tc := range tests {
+		k := parseKey(tc.seq)
+		if k.Type != tc.expected {
+			t.Errorf("%s: expected type %d, got %d", tc.name, tc.expected, k.Type)
+		}
+	}
+}

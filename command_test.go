@@ -339,3 +339,254 @@ func TestCommandQuitAdjustsIndex(t *testing.T) {
 		t.Errorf("currentBuffer should be 0 after closing last index, got %d", a.currentBuffer)
 	}
 }
+
+// --- v1.4.0 feature tests ---
+
+func TestDeleteWholeLine(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
+	a.currentBuf().cursorLine = 1
+	a.currentBuf().cursorCol = 3
+
+	a.deleteWholeLine()
+
+	if len(a.currentBuf().buf.Lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(a.currentBuf().buf.Lines))
+	}
+	if a.currentBuf().buf.Lines[0] != "first" || a.currentBuf().buf.Lines[1] != "third" {
+		t.Errorf("lines after dd: %v", a.currentBuf().buf.Lines)
+	}
+	if a.currentBuf().cursorLine != 1 {
+		t.Errorf("cursor line: %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestDeleteWholeLineSingleLine(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"only line"}
+	a.currentBuf().cursorLine = 0
+	a.currentBuf().cursorCol = 5
+
+	a.deleteWholeLine()
+
+	if len(a.currentBuf().buf.Lines) != 1 || a.currentBuf().buf.Lines[0] != "" {
+		t.Errorf("single line dd should clear to empty: %v", a.currentBuf().buf.Lines)
+	}
+	if a.currentBuf().cursorLine != 0 || a.currentBuf().cursorCol != 0 {
+		t.Errorf("cursor: (%d, %d)", a.currentBuf().cursorLine, a.currentBuf().cursorCol)
+	}
+}
+
+func TestDeleteWholeLineLastLine(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second"}
+	a.currentBuf().cursorLine = 1
+
+	a.deleteWholeLine()
+
+	if len(a.currentBuf().buf.Lines) != 1 || a.currentBuf().buf.Lines[0] != "first" {
+		t.Errorf("after deleting last line: %v", a.currentBuf().buf.Lines)
+	}
+	if a.currentBuf().cursorLine != 0 {
+		t.Errorf("cursor should move to line 0, got %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestHandleDDOperator(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
+	a.currentBuf().cursorLine = 1
+
+	// Press 'd' once.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	if !a.dPending {
+		t.Error("first 'd' should set dPending")
+	}
+
+	// Press 'd' again.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	if a.dPending {
+		t.Error("second 'd' should clear dPending")
+	}
+	if len(a.currentBuf().buf.Lines) != 2 {
+		t.Fatalf("dd should delete line, got %d lines", len(a.currentBuf().buf.Lines))
+	}
+}
+
+func TestHandleDDCancellation(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second"}
+
+	// Press 'd' then something else.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'j'})
+
+	if a.dPending {
+		t.Error("dPending should be cleared by non-d key")
+	}
+	if len(a.currentBuf().buf.Lines) != 2 {
+		t.Error("dj should not delete anything")
+	}
+}
+
+func TestMotionA(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"hello"}
+	a.currentBuf().cursorCol = 2
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'A'})
+
+	if a.mode != ModeEdit {
+		t.Error("'A' should enter edit mode")
+	}
+	if a.currentBuf().cursorCol != 5 {
+		t.Errorf("'A' should move to end of line, got col %d", a.currentBuf().cursorCol)
+	}
+}
+
+func TestMotionCaret(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"   hello"}
+	a.currentBuf().cursorCol = 7
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: '^'})
+
+	if a.currentBuf().cursorCol != 3 {
+		t.Errorf("'^' should jump to first non-space, got col %d", a.currentBuf().cursorCol)
+	}
+}
+
+func TestMotionCaretAllSpaces(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"     "}
+	a.currentBuf().cursorCol = 3
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: '^'})
+
+	if a.currentBuf().cursorCol != 0 {
+		t.Errorf("'^' on all-space line should go to col 0, got %d", a.currentBuf().cursorCol)
+	}
+}
+
+func TestMotionDollar(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"hello"}
+	a.currentBuf().cursorCol = 0
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: '$'})
+
+	if a.currentBuf().cursorCol != 5 {
+		t.Errorf("'$' should jump to end of line, got col %d", a.currentBuf().cursorCol)
+	}
+}
+
+func TestScrollDown(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"1", "2", "3", "4", "5"}
+	a.currentBuf().cursorLine = 0
+
+	a.scrollDown(2)
+
+	if a.currentBuf().cursorLine != 2 {
+		t.Errorf("scrollDown(2) should move to line 2, got %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestScrollDownClamped(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"1", "2", "3"}
+	a.currentBuf().cursorLine = 1
+
+	a.scrollDown(10)
+
+	if a.currentBuf().cursorLine != 2 {
+		t.Errorf("scrollDown past end should clamp, got line %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestScrollUp(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"1", "2", "3", "4", "5"}
+	a.currentBuf().cursorLine = 4
+
+	a.scrollUp(2)
+
+	if a.currentBuf().cursorLine != 2 {
+		t.Errorf("scrollUp(2) should move to line 2, got %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestScrollUpClamped(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"1", "2", "3"}
+	a.currentBuf().cursorLine = 1
+
+	a.scrollUp(10)
+
+	if a.currentBuf().cursorLine != 0 {
+		t.Errorf("scrollUp past start should clamp, got line %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestAppDeleteCharForward(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"hello"}
+	a.currentBuf().cursorCol = 1
+	a.mode = ModeEdit
+
+	a.deleteCharForward()
+
+	if a.currentBuf().buf.Lines[0] != "hllo" {
+		t.Errorf("forward delete should remove 'e', got %q", a.currentBuf().buf.Lines[0])
+	}
+	if a.currentBuf().cursorCol != 1 {
+		t.Errorf("cursor should stay at col 1, got %d", a.currentBuf().cursorCol)
+	}
+}
+
+func TestAppDeleteCharForwardAtEnd(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"hello", "world"}
+	a.currentBuf().cursorLine = 0
+	a.currentBuf().cursorCol = 5
+	a.mode = ModeEdit
+
+	a.deleteCharForward()
+
+	if len(a.currentBuf().buf.Lines) != 1 || a.currentBuf().buf.Lines[0] != "helloworld" {
+		t.Errorf("forward delete at end should join lines, got %v", a.currentBuf().buf.Lines)
+	}
+}
+
+func TestHomeEndDefaultMode(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"hello"}
+	a.currentBuf().cursorCol = 2
+
+	a.handleDefaultKey(Key{Type: KeyHome})
+	if a.currentBuf().cursorCol != 0 {
+		t.Errorf("Home in default mode: got col %d", a.currentBuf().cursorCol)
+	}
+
+	a.handleDefaultKey(Key{Type: KeyEnd})
+	if a.currentBuf().cursorCol != 5 {
+		t.Errorf("End in default mode: got col %d", a.currentBuf().cursorCol)
+	}
+}
+
+func TestHomeEndEditMode(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"hello"}
+	a.currentBuf().cursorCol = 2
+	a.mode = ModeEdit
+
+	a.handleEditKey(Key{Type: KeyHome})
+	if a.currentBuf().cursorCol != 0 {
+		t.Errorf("Home in edit mode: got col %d", a.currentBuf().cursorCol)
+	}
+
+	a.handleEditKey(Key{Type: KeyEnd})
+	if a.currentBuf().cursorCol != 5 {
+		t.Errorf("End in edit mode: got col %d", a.currentBuf().cursorCol)
+	}
+}

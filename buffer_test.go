@@ -234,3 +234,137 @@ func TestSaveAddsTrailingNewline(t *testing.T) {
 		t.Error("saved file should end with newline")
 	}
 }
+
+func TestDeleteLine(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"first", "second", "third"}
+
+	content := buf.DeleteLine(1)
+	if content != "second" {
+		t.Errorf("expected 'second', got %q", content)
+	}
+	if len(buf.Lines) != 2 || buf.Lines[0] != "first" || buf.Lines[1] != "third" {
+		t.Errorf("after delete: %v", buf.Lines)
+	}
+	if !buf.Dirty {
+		t.Error("buffer should be dirty")
+	}
+}
+
+func TestDeleteLineSingleLine(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"only line"}
+
+	content := buf.DeleteLine(0)
+	if content != "only line" {
+		t.Errorf("expected 'only line', got %q", content)
+	}
+	if len(buf.Lines) != 1 || buf.Lines[0] != "" {
+		t.Errorf("single line delete should clear to empty: %v", buf.Lines)
+	}
+}
+
+func TestDeleteLineInvalidIndex(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello"}
+
+	content := buf.DeleteLine(-1)
+	if content != "" {
+		t.Errorf("invalid index should return empty, got %q", content)
+	}
+	content = buf.DeleteLine(5)
+	if content != "" {
+		t.Errorf("out of range should return empty, got %q", content)
+	}
+}
+
+func TestInsertLine(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"first", "third"}
+
+	buf.InsertLine(1, "second")
+	if len(buf.Lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(buf.Lines))
+	}
+	if buf.Lines[0] != "first" || buf.Lines[1] != "second" || buf.Lines[2] != "third" {
+		t.Errorf("after insert: %v", buf.Lines)
+	}
+	if !buf.Dirty {
+		t.Error("buffer should be dirty")
+	}
+}
+
+func TestInsertLineAtStart(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"second"}
+
+	buf.InsertLine(0, "first")
+	if len(buf.Lines) != 2 || buf.Lines[0] != "first" || buf.Lines[1] != "second" {
+		t.Errorf("insert at start: %v", buf.Lines)
+	}
+}
+
+func TestInsertLineAtEnd(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"first"}
+
+	buf.InsertLine(1, "second")
+	if len(buf.Lines) != 2 || buf.Lines[0] != "first" || buf.Lines[1] != "second" {
+		t.Errorf("insert at end: %v", buf.Lines)
+	}
+}
+
+func TestDeleteCharForward(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello"}
+
+	ch := buf.DeleteCharForward(0, 1)
+	if ch != 'e' {
+		t.Errorf("expected 'e', got %c", ch)
+	}
+	if buf.Lines[0] != "hllo" {
+		t.Errorf("after forward delete: %q", buf.Lines[0])
+	}
+	if !buf.Dirty {
+		t.Error("buffer should be dirty")
+	}
+}
+
+func TestDeleteCharForwardAtEnd(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello"}
+
+	ch := buf.DeleteCharForward(0, 5)
+	if ch != 0 {
+		t.Errorf("delete at end should return 0, got %c", ch)
+	}
+	if buf.Lines[0] != "hello" {
+		t.Errorf("line should be unchanged: %q", buf.Lines[0])
+	}
+}
+
+func TestDeleteCharForwardAtStart(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello"}
+
+	ch := buf.DeleteCharForward(0, 0)
+	if ch != 'h' {
+		t.Errorf("expected 'h', got %c", ch)
+	}
+	if buf.Lines[0] != "ello" {
+		t.Errorf("after forward delete at start: %q", buf.Lines[0])
+	}
+}
+
+func TestDeleteCharForwardUnicode(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"café"}
+
+	ch := buf.DeleteCharForward(0, 3)
+	if ch != 'é' {
+		t.Errorf("expected 'é', got %c", ch)
+	}
+	if buf.Lines[0] != "caf" {
+		t.Errorf("after unicode forward delete: %q", buf.Lines[0])
+	}
+}

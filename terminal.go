@@ -97,6 +97,13 @@ const (
 	KeyLeft             // Arrow left
 	KeyRight            // Arrow right
 	KeyCtrlZ            // Ctrl+Z
+	KeyCtrlD            // Ctrl+D
+	KeyCtrlU            // Ctrl+U
+	KeyHome             // Home
+	KeyEnd              // End
+	KeyDelete           // Delete/Forward-delete
+	KeyPgUp             // Page Up
+	KeyPgDn             // Page Down
 	KeyUnknown          // Unrecognised sequence
 )
 
@@ -122,6 +129,10 @@ func parseKey(buf []byte) Key {
 			return Key{Type: KeyBackspace}
 		case b == 26: // Ctrl+Z
 			return Key{Type: KeyCtrlZ}
+		case b == 4: // Ctrl+D
+			return Key{Type: KeyCtrlD}
+		case b == 21: // Ctrl+U
+			return Key{Type: KeyCtrlU}
 		case b >= 32 && b < 127:
 			return Key{Type: KeyRune, Rune: rune(b)}
 		default:
@@ -131,6 +142,7 @@ func parseKey(buf []byte) Key {
 
 	// Escape sequences.
 	if buf[0] == 27 && len(buf) >= 3 && buf[1] == '[' {
+		// CSI 3-byte sequences.
 		switch buf[2] {
 		case 'A':
 			return Key{Type: KeyUp}
@@ -140,6 +152,26 @@ func parseKey(buf []byte) Key {
 			return Key{Type: KeyRight}
 		case 'D':
 			return Key{Type: KeyLeft}
+		case 'H':
+			return Key{Type: KeyHome}
+		case 'F':
+			return Key{Type: KeyEnd}
+		}
+
+		// CSI 4-byte sequences: ESC [ <n> ~
+		if len(buf) >= 4 && buf[3] == '~' {
+			switch buf[2] {
+			case '1':
+				return Key{Type: KeyHome}
+			case '3':
+				return Key{Type: KeyDelete}
+			case '4':
+				return Key{Type: KeyEnd}
+			case '5':
+				return Key{Type: KeyPgUp}
+			case '6':
+				return Key{Type: KeyPgDn}
+			}
 		}
 	}
 

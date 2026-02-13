@@ -165,3 +165,54 @@ func (b *Buffer) WordCount() int {
 	}
 	return count
 }
+
+// DeleteLine removes an entire line from the buffer and returns its content.
+// If the buffer has only one line, it is cleared to an empty string.
+func (b *Buffer) DeleteLine(line int) string {
+	if line < 0 || line >= len(b.Lines) {
+		return ""
+	}
+	content := b.Lines[line]
+	if len(b.Lines) == 1 {
+		b.Lines[0] = ""
+	} else {
+		b.Lines = append(b.Lines[:line], b.Lines[line+1:]...)
+	}
+	b.Dirty = true
+	return content
+}
+
+// InsertLine inserts a line with the given content at the specified position.
+func (b *Buffer) InsertLine(line int, content string) {
+	if line < 0 {
+		line = 0
+	}
+	if line > len(b.Lines) {
+		line = len(b.Lines)
+	}
+	newLines := make([]string, 0, len(b.Lines)+1)
+	newLines = append(newLines, b.Lines[:line]...)
+	newLines = append(newLines, content)
+	newLines = append(newLines, b.Lines[line:]...)
+	b.Lines = newLines
+	b.Dirty = true
+}
+
+// DeleteCharForward deletes the character at the given position (forward delete).
+// Returns the deleted rune, or 0 if at end of the line.
+func (b *Buffer) DeleteCharForward(line, col int) rune {
+	if line < 0 || line >= len(b.Lines) {
+		return 0
+	}
+	runes := []rune(b.Lines[line])
+	if col < 0 || col >= len(runes) {
+		return 0
+	}
+	ch := runes[col]
+	newRunes := make([]rune, 0, len(runes)-1)
+	newRunes = append(newRunes, runes[:col]...)
+	newRunes = append(newRunes, runes[col+1:]...)
+	b.Lines[line] = string(newRunes)
+	b.Dirty = true
+	return ch
+}

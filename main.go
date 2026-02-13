@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-const Version = "1.3.0"
+const Version = "1.4.0"
 
 func main() {
 	filenames := os.Args[1:]
