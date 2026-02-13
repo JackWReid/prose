@@ -13,7 +13,7 @@ func TestRenderFrameContainsText(t *testing.T) {
 	}
 	vp := NewViewport(120, 10)
 
-	frame := r.RenderFrame(dls, vp, 0, 0, " test.txt", "5 words  DEFAULT ", PlainHighlighter{})
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " test.txt", "5 words  DEFAULT ", PlainHighlighter{})
 
 	if !strings.Contains(frame, "Hello, world!") {
 		t.Error("frame should contain first line text")
@@ -34,7 +34,7 @@ func TestRenderFrameStatusBarReverse(t *testing.T) {
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "text"}}
 	vp := NewViewport(80, 5)
 
-	frame := r.RenderFrame(dls, vp, 0, 0, " file.txt [+]", "3 words  EDIT ", PlainHighlighter{})
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " file.txt", "3 words  EDIT ", PlainHighlighter{})
 
 	// Should contain reverse video escape code.
 	if !strings.Contains(frame, "\x1b[7m") {
@@ -51,10 +51,9 @@ func TestRenderFrameWithMargin(t *testing.T) {
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "centered"}}
 	vp := NewViewport(120, 5) // margin = (120-100)/2 = 10
 
-	frame := r.RenderFrame(dls, vp, 0, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{})
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{})
 
 	// The text should be preceded by spaces for the left margin.
-	// After the cursor positioning escape, we should find spaces before "centered".
 	if !strings.Contains(frame, strings.Repeat(" ", 10)+"centered") {
 		t.Error("text should be indented by left margin")
 	}
@@ -67,17 +66,13 @@ func TestRenderFrameScrolled(t *testing.T) {
 		dls = append(dls, DisplayLine{BufferLine: i, Offset: 0, Text: strings.Repeat("x", i+1)})
 	}
 	vp := NewViewport(120, 10) // 9 visible lines
-	vp.ScrollOffset = 5
 
-	frame := r.RenderFrame(dls, vp, 5, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{})
+	frame := r.RenderFrame(dls, vp, 5, 5, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{})
 
 	// Line at index 5 has 6 x's. Should be in the frame.
 	if !strings.Contains(frame, "xxxxxx") {
 		t.Error("should show line at scroll offset")
 	}
-	// Line at index 0 should NOT be visible (it has 1 'x').
-	// This is tricky to test precisely, but line 0's unique text is a single 'x',
-	// which appears as a substring of others. So skip negative assertion.
 }
 
 func TestRenderFrameCursorPosition(t *testing.T) {
@@ -85,7 +80,7 @@ func TestRenderFrameCursorPosition(t *testing.T) {
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "hello"}}
 	vp := NewViewport(120, 10) // margin = 10
 
-	frame := r.RenderFrame(dls, vp, 0, 3, " f.txt", "5 words  DEFAULT ", PlainHighlighter{})
+	frame := r.RenderFrame(dls, vp, 0, 0, 3, " f.txt", "5 words  DEFAULT ", PlainHighlighter{})
 
 	// At scroll 0, top padding = 1. Cursor should be at row 2, col margin+3+1 = 14.
 	if !strings.Contains(frame, "\x1b[2;14H") {
@@ -100,9 +95,8 @@ func TestRenderFrameCursorPositionScrolled(t *testing.T) {
 		dls = append(dls, DisplayLine{BufferLine: i, Offset: 0, Text: "line"})
 	}
 	vp := NewViewport(120, 10)
-	vp.ScrollOffset = 5 // No top padding when scrolled.
 
-	frame := r.RenderFrame(dls, vp, 7, 2, " f.txt", "5 words  DEFAULT ", PlainHighlighter{})
+	frame := r.RenderFrame(dls, vp, 5, 7, 2, " f.txt", "5 words  DEFAULT ", PlainHighlighter{})
 
 	// screenRow = 7 - 5 + 1 + 0 = 3, screenCol = 10 + 2 + 1 = 13
 	if !strings.Contains(frame, "\x1b[3;13H") {
@@ -115,10 +109,57 @@ func TestRenderFrameTopPadding(t *testing.T) {
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "first line"}}
 	vp := NewViewport(80, 5) // No margin (80 < 100)
 
-	frame := r.RenderFrame(dls, vp, 0, 0, " f.txt", "2 words  DEFAULT ", PlainHighlighter{})
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "2 words  DEFAULT ", PlainHighlighter{})
 
 	// At scroll 0, content starts at row 2 (top padding = 1).
 	if !strings.Contains(frame, "\x1b[2;1H") {
 		t.Errorf("content should start at row 2 with top padding. Frame: %q", frame)
+	}
+}
+
+func TestRenderPickerOverlay(t *testing.T) {
+	r := NewRenderer()
+	buffers := []*EditorBuffer{
+		NewEditorBuffer("main.go"),
+		NewEditorBuffer("utils.go"),
+		NewEditorBuffer("README.md"),
+	}
+	picker := &Picker{Active: true, Selected: 1}
+	vp := NewViewport(80, 24)
+
+	result := r.RenderPicker(buffers, picker, 0, vp)
+
+	if !strings.Contains(result, "Open buffers") {
+		t.Error("picker should show title")
+	}
+	if !strings.Contains(result, "main.go") {
+		t.Error("picker should show first buffer name")
+	}
+	if !strings.Contains(result, "utils.go") {
+		t.Error("picker should show second buffer name")
+	}
+	if !strings.Contains(result, "README.md") {
+		t.Error("picker should show third buffer name")
+	}
+	if !strings.Contains(result, ">") {
+		t.Error("picker should show selection indicator")
+	}
+}
+
+func TestRenderPickerDirtyIndicator(t *testing.T) {
+	r := NewRenderer()
+	buffers := []*EditorBuffer{
+		NewEditorBuffer("clean.go"),
+		NewEditorBuffer("dirty.go"),
+	}
+	buffers[1].buf.Dirty = true
+	picker := &Picker{Active: true, Selected: 0}
+	vp := NewViewport(80, 24)
+
+	result := r.RenderPicker(buffers, picker, 0, vp)
+
+	// Dirty file should have yellow/bold ANSI code.
+	if !strings.Contains(result, "\x1b[1;33m") {
+		t.Error("dirty file should be highlighted with yellow/bold")
 	}
 }

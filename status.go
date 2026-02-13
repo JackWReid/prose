@@ -26,7 +26,8 @@ func NewStatusBar() *StatusBar {
 }
 
 // FormatLeft returns the left-aligned portion of the status bar.
-func (s *StatusBar) FormatLeft(filename string, dirty bool) string {
+// bufferInfo is an optional "[2/3]" indicator when multiple buffers are open.
+func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string) string {
 	if s.Prompt == PromptSaveNew {
 		return fmt.Sprintf(" Save as: %s", s.PromptText)
 	}
@@ -39,11 +40,16 @@ func (s *StatusBar) FormatLeft(filename string, dirty bool) string {
 	}
 
 	name := truncatePath(filename)
-	mod := ""
+
+	// Colour dirty filenames yellow/bold via ANSI codes.
 	if dirty {
-		mod = " [+]"
+		name = "\x1b[1;33m" + name + "\x1b[0m\x1b[7m"
 	}
-	return fmt.Sprintf(" %s%s", name, mod)
+
+	if bufferInfo != "" {
+		return fmt.Sprintf(" %s %s", name, bufferInfo)
+	}
+	return fmt.Sprintf(" %s", name)
 }
 
 // FormatRight returns the right-aligned portion of the status bar.

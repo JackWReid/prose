@@ -76,11 +76,10 @@ func WrapBuffer(buf *Buffer, maxWidth int) []DisplayLine {
 
 // Viewport manages the visible window into the display lines.
 type Viewport struct {
-	ScrollOffset int // First visible display line index
-	Width        int // Terminal width
-	Height       int // Terminal height (status bar uses 1 row, so visible = Height-1)
-	ColWidth     int // Text column width (capped at ColumnWidth or terminal width)
-	LeftMargin   int // Left margin for centring
+	Width      int // Terminal width
+	Height     int // Terminal height (status bar uses 1 row, so visible = Height-1)
+	ColWidth   int // Text column width (capped at ColumnWidth or terminal width)
+	LeftMargin int // Left margin for centring
 }
 
 func NewViewport(termWidth, termHeight int) *Viewport {
@@ -110,27 +109,27 @@ func (v *Viewport) Resize(termWidth, termHeight int) {
 }
 
 // VisibleLines returns the number of text lines visible (excluding status bar).
-// When at the top of the document (ScrollOffset == 0), one line is reserved
+// When at the top of the document (scrollOffset == 0), one line is reserved
 // for top padding, giving breathing room from terminal chrome.
-func (v *Viewport) VisibleLines() int {
+func (v *Viewport) VisibleLines(scrollOffset int) int {
 	vis := v.Height - 1
-	if v.ScrollOffset == 0 && vis > 1 {
+	if scrollOffset == 0 && vis > 1 {
 		vis--
 	}
 	return vis
 }
 
-// EnsureCursorVisible adjusts ScrollOffset so the given display line is visible.
-func (v *Viewport) EnsureCursorVisible(displayLine int) {
-	vis := v.VisibleLines()
+// EnsureCursorVisible adjusts scrollOffset so the given display line is visible.
+func (v *Viewport) EnsureCursorVisible(displayLine int, scrollOffset *int) {
+	vis := v.VisibleLines(*scrollOffset)
 	if vis <= 0 {
 		return
 	}
-	if displayLine < v.ScrollOffset {
-		v.ScrollOffset = displayLine
+	if displayLine < *scrollOffset {
+		*scrollOffset = displayLine
 	}
-	if displayLine >= v.ScrollOffset+vis {
-		v.ScrollOffset = displayLine - vis + 1
+	if displayLine >= *scrollOffset+vis {
+		*scrollOffset = displayLine - vis + 1
 	}
 }
 

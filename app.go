@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -15,38 +17,49 @@ const (
 
 // App is the top-level editor state.
 type App struct {
-	buf         *Buffer
-	undo        *UndoStack
-	viewport    *Viewport
-	renderer    *Renderer
-	statusBar   *StatusBar
-	terminal    *Terminal
-	highlighter Highlighter
-	mode        Mode
+	buffers       []*EditorBuffer
+	currentBuffer int
 
-	// Cursor position in buffer coordinates (line, col in runes).
-	cursorLine int
-	cursorCol  int
+	viewport  *Viewport
+	renderer  *Renderer
+	statusBar *StatusBar
+	terminal  *Terminal
+	picker    *Picker
+	mode      Mode
 
+	leaderPending bool  // Space was pressed, awaiting second key.
 	quit          bool
 	quitAfterSave bool // Set by :wq on unnamed buffers.
 }
 
-func NewApp(filename string) *App {
-	return &App{
-		buf:         NewBuffer(filename),
-		undo:        NewUndoStack(),
-		renderer:    NewRenderer(),
-		statusBar:   NewStatusBar(),
-		highlighter: DetectHighlighter(filename),
-		mode:        ModeDefault,
+// currentBuf returns the active EditorBuffer.
+func (a *App) currentBuf() *EditorBuffer {
+	return a.buffers[a.currentBuffer]
+}
+
+func NewApp(filenames []string) *App {
+	app := &App{
+		renderer:  NewRenderer(),
+		statusBar: NewStatusBar(),
+		picker:    &Picker{},
+		mode:      ModeDefault,
 	}
+	if len(filenames) == 0 {
+		app.buffers = []*EditorBuffer{NewEditorBuffer("")}
+	} else {
+		for _, f := range filenames {
+			app.buffers = append(app.buffers, NewEditorBuffer(f))
+		}
+	}
+	return app
 }
 
 func (a *App) Run() error {
-	// Load file.
-	if err := a.buf.Load(); err != nil {
-		return err
+	// Load all buffers.
+	for _, eb := range a.buffers {
+		if err := eb.buf.Load(); err != nil {
+			return err
+		}
 	}
 
 	// Set up terminal.
@@ -92,6 +105,12 @@ func (a *App) handleKey(key Key) {
 	// Clear any temporary status message on keypress.
 	a.statusBar.ClearMessage()
 
+	// If picker is active, handle it first.
+	if a.picker.Active {
+		a.handlePickerKey(key)
+		return
+	}
+
 	// If a prompt is active, handle it first.
 	if a.statusBar.Prompt != PromptNone {
 		a.handlePromptKey(key)
@@ -107,9 +126,26 @@ func (a *App) handleKey(key Key) {
 }
 
 func (a *App) handleDefaultKey(key Key) {
+	// Leader key sequence: Space followed by a second key.
+	if a.leaderPending {
+		a.leaderPending = false
+		if key.Type == KeyRune {
+			switch key.Rune {
+			case 'p':
+				a.picker.Show(a.currentBuffer)
+				return
+			}
+		}
+		// Unknown leader combo — ignore.
+		return
+	}
+
+	eb := a.currentBuf()
 	switch key.Type {
 	case KeyRune:
 		switch key.Rune {
+		case ' ':
+			a.leaderPending = true
 		case 'i':
 			a.mode = ModeEdit
 		case ':':
@@ -123,7 +159,7 @@ func (a *App) handleDefaultKey(key Key) {
 		case 'l':
 			a.moveCursor(KeyRight)
 		case 'o':
-			a.cursorCol = a.buf.LineLen(a.cursorLine)
+			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 			a.insertNewline()
 			a.mode = ModeEdit
 		}
@@ -151,7 +187,29 @@ func (a *App) handleEditKey(key Key) {
 	}
 }
 
+func (a *App) handlePickerKey(key Key) {
+	switch key.Type {
+	case KeyEscape:
+		a.picker.Hide()
+	case KeyUp:
+		a.picker.MoveUp()
+	case KeyDown:
+		a.picker.MoveDown(len(a.buffers))
+	case KeyRune:
+		switch key.Rune {
+		case 'k':
+			a.picker.MoveUp()
+		case 'j':
+			a.picker.MoveDown(len(a.buffers))
+		}
+	case KeyEnter:
+		a.currentBuffer = a.picker.Selected
+		a.picker.Hide()
+	}
+}
+
 func (a *App) handlePromptKey(key Key) {
+	eb := a.currentBuf()
 	switch a.statusBar.Prompt {
 	case PromptSaveNew:
 		text, done, cancelled := a.statusBar.HandlePromptKey(key)
@@ -160,10 +218,10 @@ func (a *App) handlePromptKey(key Key) {
 			return
 		}
 		if done && text != "" {
-			a.buf.Save(text)
-			a.highlighter = DetectHighlighter(a.buf.Filename)
+			eb.buf.Save(text)
+			eb.highlighter = DetectHighlighter(eb.buf.Filename)
 			if a.quitAfterSave {
-				a.quit = true
+				a.closeCurrentBuffer()
 				a.quitAfterSave = false
 			}
 		}
@@ -180,18 +238,19 @@ func (a *App) handlePromptKey(key Key) {
 }
 
 func (a *App) executeCommand(cmd string) {
+	eb := a.currentBuf()
 	cmd = strings.TrimSpace(cmd)
 
 	switch {
 	case cmd == "q":
-		if a.buf.Dirty {
+		if eb.buf.Dirty {
 			a.statusBar.SetMessage("Unsaved changes. Use :q! to discard, or :w to save.")
 		} else {
-			a.quit = true
+			a.closeCurrentBuffer()
 		}
 
 	case cmd == "q!":
-		a.quit = true
+		a.closeCurrentBuffer()
 
 	case cmd == "w":
 		a.save()
@@ -199,36 +258,48 @@ func (a *App) executeCommand(cmd string) {
 	case strings.HasPrefix(cmd, "w "):
 		filename := strings.TrimSpace(cmd[2:])
 		if filename != "" {
-			a.buf.Save(filename)
-			a.highlighter = DetectHighlighter(a.buf.Filename)
+			eb.buf.Save(filename)
+			eb.highlighter = DetectHighlighter(eb.buf.Filename)
 		}
 
 	case cmd == "wq":
-		if a.buf.Filename == "" {
+		if eb.buf.Filename == "" {
 			a.quitAfterSave = true
 			a.statusBar.StartPrompt(PromptSaveNew)
 		} else {
-			a.buf.Save("")
-			a.quit = true
+			eb.buf.Save("")
+			a.closeCurrentBuffer()
 		}
+
+	case strings.HasPrefix(cmd, "e "):
+		filename := strings.TrimSpace(cmd[2:])
+		if filename == "" {
+			a.statusBar.SetMessage("Usage: :e <filename>")
+			return
+		}
+		idx := a.openBuffer(filename)
+		a.currentBuffer = idx
+
+	case cmd == "e":
+		a.statusBar.SetMessage("Usage: :e <filename>")
 
 	case strings.HasPrefix(cmd, "rename "):
 		newName := strings.TrimSpace(cmd[7:])
 		if newName == "" {
 			return
 		}
-		oldName := a.buf.Filename
+		oldName := eb.buf.Filename
 		if oldName == "" {
 			// Unnamed buffer — behaves like :w <filename>.
-			a.buf.Save(newName)
-			a.highlighter = DetectHighlighter(a.buf.Filename)
+			eb.buf.Save(newName)
+			eb.highlighter = DetectHighlighter(eb.buf.Filename)
 		} else {
 			if err := os.Rename(oldName, newName); err != nil {
 				a.statusBar.SetMessage("Rename failed: " + err.Error())
 				return
 			}
-			a.buf.Filename = newName
-			a.highlighter = DetectHighlighter(a.buf.Filename)
+			eb.buf.Filename = newName
+			eb.highlighter = DetectHighlighter(eb.buf.Filename)
 		}
 
 	default:
@@ -236,109 +307,169 @@ func (a *App) executeCommand(cmd string) {
 	}
 }
 
+// openBuffer opens a file or switches to it if already open. Returns the buffer index.
+func (a *App) openBuffer(filename string) int {
+	// Normalise to absolute path for comparison.
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		absPath = filename
+	}
+
+	// Check if already open.
+	for i, eb := range a.buffers {
+		existingPath, err2 := filepath.Abs(eb.buf.Filename)
+		if err2 != nil {
+			existingPath = eb.buf.Filename
+		}
+		if existingPath == absPath {
+			return i
+		}
+	}
+
+	// Create new buffer.
+	eb := NewEditorBuffer(filename)
+	eb.buf.Load()
+	a.buffers = append(a.buffers, eb)
+	return len(a.buffers) - 1
+}
+
+// closeCurrentBuffer removes the current buffer. If it's the last one, quit.
+func (a *App) closeCurrentBuffer() {
+	if len(a.buffers) == 1 {
+		a.quit = true
+		return
+	}
+	a.buffers = append(a.buffers[:a.currentBuffer], a.buffers[a.currentBuffer+1:]...)
+	if a.currentBuffer >= len(a.buffers) {
+		a.currentBuffer = len(a.buffers) - 1
+	}
+}
+
 func (a *App) save() {
-	if a.buf.Filename == "" {
+	eb := a.currentBuf()
+	if eb.buf.Filename == "" {
 		a.statusBar.StartPrompt(PromptSaveNew)
 		return
 	}
-	a.buf.Save("")
+	eb.buf.Save("")
 }
 
 // insertChar inserts a character at the cursor and advances the cursor.
 func (a *App) insertChar(ch rune) {
-	a.buf.InsertChar(a.cursorLine, a.cursorCol, ch)
-	a.undo.PushInsertChar(a.cursorLine, a.cursorCol, ch)
-	a.cursorCol++
+	eb := a.currentBuf()
+	eb.buf.InsertChar(eb.cursorLine, eb.cursorCol, ch)
+	eb.undo.PushInsertChar(eb.cursorLine, eb.cursorCol, ch)
+	eb.cursorCol++
 }
 
 // insertNewline splits the current line at the cursor.
 func (a *App) insertNewline() {
-	a.undo.PushInsertLine(a.cursorLine, a.cursorCol, a.cursorLine, a.cursorCol)
-	a.buf.InsertNewline(a.cursorLine, a.cursorCol)
-	a.cursorLine++
-	a.cursorCol = 0
+	eb := a.currentBuf()
+	eb.undo.PushInsertLine(eb.cursorLine, eb.cursorCol, eb.cursorLine, eb.cursorCol)
+	eb.buf.InsertNewline(eb.cursorLine, eb.cursorCol)
+	eb.cursorLine++
+	eb.cursorCol = 0
 }
 
 // deleteChar deletes the character before the cursor (backspace).
 func (a *App) deleteChar() {
-	if a.cursorCol == 0 && a.cursorLine == 0 {
+	eb := a.currentBuf()
+	if eb.cursorCol == 0 && eb.cursorLine == 0 {
 		return
 	}
 
-	if a.cursorCol > 0 {
+	if eb.cursorCol > 0 {
 		// Delete character within the line.
-		ch, _ := a.buf.DeleteChar(a.cursorLine, a.cursorCol)
+		ch, _ := eb.buf.DeleteChar(eb.cursorLine, eb.cursorCol)
 		if ch == 0 {
 			return
 		}
-		a.undo.PushDeleteChar(a.cursorLine, a.cursorCol-1, ch, a.cursorLine, a.cursorCol)
-		a.cursorCol--
+		eb.undo.PushDeleteChar(eb.cursorLine, eb.cursorCol-1, ch, eb.cursorLine, eb.cursorCol)
+		eb.cursorCol--
 	} else {
 		// At column 0: join with the previous line.
-		// Capture the previous line's length before the join — that's where the cursor goes.
-		prevLineLen := a.buf.LineLen(a.cursorLine - 1)
-		saveLine := a.cursorLine
-		saveCol := a.cursorCol
+		prevLineLen := eb.buf.LineLen(eb.cursorLine - 1)
+		saveLine := eb.cursorLine
+		saveCol := eb.cursorCol
 
-		a.buf.JoinLines(a.cursorLine - 1)
-		a.buf.Dirty = true
-		a.undo.PushDeleteLine(a.cursorLine-1, prevLineLen, saveLine, saveCol)
+		eb.buf.JoinLines(eb.cursorLine - 1)
+		eb.buf.Dirty = true
+		eb.undo.PushDeleteLine(eb.cursorLine-1, prevLineLen, saveLine, saveCol)
 
-		a.cursorLine--
-		a.cursorCol = prevLineLen
+		eb.cursorLine--
+		eb.cursorCol = prevLineLen
 	}
 }
 
 // moveCursor moves the cursor in the given direction, clamping to valid positions.
 func (a *App) moveCursor(dir int) {
+	eb := a.currentBuf()
 	switch dir {
 	case KeyLeft:
-		if a.cursorCol > 0 {
-			a.cursorCol--
-		} else if a.cursorLine > 0 {
-			a.cursorLine--
-			a.cursorCol = a.buf.LineLen(a.cursorLine)
+		if eb.cursorCol > 0 {
+			eb.cursorCol--
+		} else if eb.cursorLine > 0 {
+			eb.cursorLine--
+			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 		}
 	case KeyRight:
-		if a.cursorCol < a.buf.LineLen(a.cursorLine) {
-			a.cursorCol++
-		} else if a.cursorLine < a.buf.LineCount()-1 {
-			a.cursorLine++
-			a.cursorCol = 0
+		if eb.cursorCol < eb.buf.LineLen(eb.cursorLine) {
+			eb.cursorCol++
+		} else if eb.cursorLine < eb.buf.LineCount()-1 {
+			eb.cursorLine++
+			eb.cursorCol = 0
 		}
 	case KeyUp:
-		if a.cursorLine > 0 {
-			a.cursorLine--
-			if a.cursorCol > a.buf.LineLen(a.cursorLine) {
-				a.cursorCol = a.buf.LineLen(a.cursorLine)
+		if eb.cursorLine > 0 {
+			eb.cursorLine--
+			if eb.cursorCol > eb.buf.LineLen(eb.cursorLine) {
+				eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 			}
 		}
 	case KeyDown:
-		if a.cursorLine < a.buf.LineCount()-1 {
-			a.cursorLine++
-			if a.cursorCol > a.buf.LineLen(a.cursorLine) {
-				a.cursorCol = a.buf.LineLen(a.cursorLine)
+		if eb.cursorLine < eb.buf.LineCount()-1 {
+			eb.cursorLine++
+			if eb.cursorCol > eb.buf.LineLen(eb.cursorLine) {
+				eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 			}
 		}
 	}
 }
 
 func (a *App) undoAction() {
-	line, col, ok := a.undo.Undo(a.buf)
+	eb := a.currentBuf()
+	line, col, ok := eb.undo.Undo(eb.buf)
 	if ok {
-		a.cursorLine = line
-		a.cursorCol = col
+		eb.cursorLine = line
+		eb.cursorCol = col
 	}
 }
 
 func (a *App) render() {
-	displayLines := WrapBuffer(a.buf, a.viewport.ColWidth)
-	cursorDL, cursorDC := CursorToDisplayLine(displayLines, a.cursorLine, a.cursorCol)
-	a.viewport.EnsureCursorVisible(cursorDL)
+	eb := a.currentBuf()
+	displayLines := WrapBuffer(eb.buf, a.viewport.ColWidth)
+	cursorDL, cursorDC := CursorToDisplayLine(displayLines, eb.cursorLine, eb.cursorCol)
 
-	statusLeft := a.statusBar.FormatLeft(a.buf.Filename, a.buf.Dirty)
-	statusRight := a.statusBar.FormatRight(a.mode, a.buf.WordCount())
+	a.viewport.EnsureCursorVisible(cursorDL, &eb.scrollOffset)
 
-	frame := a.renderer.RenderFrame(displayLines, a.viewport, cursorDL, cursorDC, statusLeft, statusRight, a.highlighter)
+	bufferInfo := ""
+	if len(a.buffers) > 1 {
+		bufferInfo = formatBufferInfo(a.currentBuffer+1, len(a.buffers))
+	}
+
+	statusLeft := a.statusBar.FormatLeft(eb.Filename(), eb.IsDirty(), bufferInfo)
+	statusRight := a.statusBar.FormatRight(a.mode, eb.WordCount())
+
+	frame := a.renderer.RenderFrame(displayLines, a.viewport, eb.scrollOffset, cursorDL, cursorDC, statusLeft, statusRight, eb.highlighter)
+
+	// Render picker overlay if active.
+	if a.picker.Active {
+		frame += a.renderer.RenderPicker(a.buffers, a.picker, a.currentBuffer, a.viewport)
+	}
+
 	os.Stdout.WriteString(frame)
+}
+
+func formatBufferInfo(current, total int) string {
+	return fmt.Sprintf("[%d/%d]", current, total)
 }

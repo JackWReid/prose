@@ -52,8 +52,8 @@ func TestMarkdownHeadings(t *testing.T) {
 	}
 	for _, line := range cases {
 		got := h.Highlight(line)
-		if !strings.HasPrefix(got, "\x1b[1m") {
-			t.Errorf("heading %q should start with bold ANSI code, got %q", line, got)
+		if !strings.HasPrefix(got, "\x1b[1;34m") {
+			t.Errorf("heading %q should start with bold blue ANSI code, got %q", line, got)
 		}
 		if !strings.Contains(got, line) {
 			t.Errorf("heading output should contain original text %q", line)
@@ -65,7 +65,7 @@ func TestMarkdownNotHeading(t *testing.T) {
 	h := MarkdownHighlighter{}
 	// No space after # — not a heading.
 	got := h.Highlight("#nospace")
-	if strings.HasPrefix(got, "\x1b[1m") {
+	if strings.HasPrefix(got, "\x1b[1;34m") {
 		t.Error("#nospace should not be treated as a heading")
 	}
 }
@@ -73,8 +73,8 @@ func TestMarkdownNotHeading(t *testing.T) {
 func TestMarkdownBlockquote(t *testing.T) {
 	h := MarkdownHighlighter{}
 	got := h.Highlight("> a quote")
-	if !strings.HasPrefix(got, "\x1b[2m") {
-		t.Errorf("blockquote should start with dim, got %q", got)
+	if !strings.HasPrefix(got, "\x1b[90m") {
+		t.Errorf("blockquote should start with dark grey, got %q", got)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestMarkdownHorizontalRule(t *testing.T) {
 	h := MarkdownHighlighter{}
 	for _, hr := range []string{"---", "***", "___", "-----"} {
 		got := h.Highlight(hr)
-		if !strings.HasPrefix(got, "\x1b[2m") {
-			t.Errorf("HR %q should start with dim, got %q", hr, got)
+		if !strings.HasPrefix(got, "\x1b[90m") {
+			t.Errorf("HR %q should start with dark grey, got %q", hr, got)
 		}
 	}
 }
@@ -91,8 +91,8 @@ func TestMarkdownHorizontalRule(t *testing.T) {
 func TestMarkdownBold(t *testing.T) {
 	h := MarkdownHighlighter{}
 	got := h.Highlight("some **bold** text")
-	if !strings.Contains(got, "\x1b[1m") {
-		t.Errorf("bold text should contain bold ANSI, got %q", got)
+	if !strings.Contains(got, "\x1b[1;33m") {
+		t.Errorf("bold text should contain bold yellow ANSI, got %q", got)
 	}
 	if !strings.Contains(got, "bold") {
 		t.Error("bold text content should be preserved")
@@ -102,16 +102,16 @@ func TestMarkdownBold(t *testing.T) {
 func TestMarkdownItalic(t *testing.T) {
 	h := MarkdownHighlighter{}
 	got := h.Highlight("some *italic* text")
-	if !strings.Contains(got, "\x1b[3m") {
-		t.Errorf("italic text should contain italic ANSI, got %q", got)
+	if !strings.Contains(got, "\x1b[3;36m") {
+		t.Errorf("italic text should contain italic cyan ANSI, got %q", got)
 	}
 }
 
 func TestMarkdownInlineCode(t *testing.T) {
 	h := MarkdownHighlighter{}
 	got := h.Highlight("run `go test` now")
-	if !strings.Contains(got, "\x1b[2m") {
-		t.Errorf("inline code should contain dim ANSI, got %q", got)
+	if !strings.Contains(got, "\x1b[35m") {
+		t.Errorf("inline code should contain magenta ANSI, got %q", got)
 	}
 	if !strings.Contains(got, "go test") {
 		t.Error("code content should be preserved")
@@ -121,8 +121,8 @@ func TestMarkdownInlineCode(t *testing.T) {
 func TestMarkdownLink(t *testing.T) {
 	h := MarkdownHighlighter{}
 	got := h.Highlight("see [my link](https://example.com) here")
-	if !strings.Contains(got, "\x1b[4m") {
-		t.Errorf("link text should contain underline ANSI, got %q", got)
+	if !strings.Contains(got, "\x1b[4;32m") {
+		t.Errorf("link text should contain underlined green ANSI, got %q", got)
 	}
 	if !strings.Contains(got, "my link") {
 		t.Error("link text should be preserved")

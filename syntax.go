@@ -37,20 +37,20 @@ var (
 func (MarkdownHighlighter) Highlight(line string) string {
 	// Line-level rules: if matched, style the entire line.
 	if reHR.MatchString(line) {
-		return "\x1b[2m" + line + "\x1b[0m"
+		return "\x1b[90m" + line + "\x1b[0m"
 	}
 	if reHeading.MatchString(line) {
-		return "\x1b[1m" + line + "\x1b[0m"
+		return "\x1b[1;34m" + line + "\x1b[0m"
 	}
 	if reQuote.MatchString(line) {
-		return "\x1b[2m" + line + "\x1b[0m"
+		return "\x1b[90m" + line + "\x1b[0m"
 	}
 
 	// Inline rules applied in order: bold, italic, code, link.
 	result := line
 
 	// Bold: **text** or __text__
-	result = reBold.ReplaceAllString(result, "$1\x1b[1m$2\x1b[22m$3")
+	result = reBold.ReplaceAllString(result, "$1\x1b[1;33m$2\x1b[22;39m$3")
 
 	// Italic *text* (not inside bold's **)
 	result = reItalicStar.ReplaceAllStringFunc(result, func(match string) string {
@@ -58,7 +58,7 @@ func (MarkdownHighlighter) Highlight(line string) string {
 		idx := strings.Index(match, "*")
 		prefix := match[:idx]
 		inner := match[idx+1 : len(match)-1]
-		return prefix + "*\x1b[3m" + inner + "\x1b[23m*"
+		return prefix + "*\x1b[3;36m" + inner + "\x1b[23;39m*"
 	})
 
 	// Italic _text_ (not inside a word)
@@ -66,11 +66,11 @@ func (MarkdownHighlighter) Highlight(line string) string {
 		idx := strings.Index(match, "_")
 		prefix := match[:idx]
 		inner := match[idx+1 : len(match)-1]
-		return prefix + "_\x1b[3m" + inner + "\x1b[23m_"
+		return prefix + "_\x1b[3;36m" + inner + "\x1b[23;39m_"
 	})
 
 	// Inline code: `code`
-	result = reCode.ReplaceAllString(result, "`\x1b[2m$1\x1b[22m`")
+	result = reCode.ReplaceAllString(result, "`\x1b[35m$1\x1b[39m`")
 
 	// Links: [text](url) — underline the link text
 	result = reLink.ReplaceAllStringFunc(result, func(match string) string {
@@ -82,7 +82,7 @@ func (MarkdownHighlighter) Highlight(line string) string {
 		}
 		text := match[open+1 : close]
 		rest := match[close:]
-		return "[" + "\x1b[4m" + text + "\x1b[24m" + rest
+		return "[" + "\x1b[4;32m" + text + "\x1b[24;39m" + rest
 	})
 
 	return result + "\x1b[0m"

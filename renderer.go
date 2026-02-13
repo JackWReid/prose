@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,6 +19,7 @@ func NewRenderer() *Renderer {
 func (r *Renderer) RenderFrame(
 	displayLines []DisplayLine,
 	vp *Viewport,
+	scrollOffset int,
 	cursorDisplayLine int,
 	cursorDisplayCol int,
 	statusLeft string,
@@ -32,9 +34,9 @@ func (r *Renderer) RenderFrame(
 	// Clear screen and move to top-left.
 	r.buf.WriteString("\x1b[2J\x1b[H")
 
-	visibleLines := vp.VisibleLines()
+	visibleLines := vp.VisibleLines(scrollOffset)
 	topPadding := 0
-	if vp.ScrollOffset == 0 {
+	if scrollOffset == 0 {
 		topPadding = 1
 	}
 	marginStr := ""
@@ -43,7 +45,7 @@ func (r *Renderer) RenderFrame(
 	}
 
 	for i := 0; i < visibleLines; i++ {
-		idx := vp.ScrollOffset + i
+		idx := scrollOffset + i
 		// Move to row (1-indexed), offset by top padding.
 		row := i + 1 + topPadding
 		r.buf.WriteString(fmt.Sprintf("\x1b[%d;1H", row))
@@ -60,7 +62,7 @@ func (r *Renderer) RenderFrame(
 	r.renderStatusBar(vp, statusLeft, statusRight)
 
 	// Position the cursor.
-	screenRow := cursorDisplayLine - vp.ScrollOffset + 1 + topPadding
+	screenRow := cursorDisplayLine - scrollOffset + 1 + topPadding
 	screenCol := vp.LeftMargin + cursorDisplayCol + 1
 	r.buf.WriteString(fmt.Sprintf("\x1b[%d;%dH", screenRow, screenCol))
 
@@ -70,36 +72,139 @@ func (r *Renderer) RenderFrame(
 	return r.buf.String()
 }
 
+// RenderPicker renders the buffer picker overlay centred on screen.
+func (r *Renderer) RenderPicker(buffers []*EditorBuffer, picker *Picker, currentBuffer int, vp *Viewport) string {
+	var b strings.Builder
+
+	// Hide cursor while picker is shown.
+	b.WriteString("\x1b[?25l")
+
+	// Calculate box dimensions.
+	maxNameLen := 0
+	for _, eb := range buffers {
+		name := pickerDisplayName(eb.Filename())
+		if len(name) > maxNameLen {
+			maxNameLen = len(name)
+		}
+	}
+	// Box width: "  > " (4) + name + "  " (2) padding + border (2)
+	innerWidth := maxNameLen + 6
+	title := " Open buffers "
+	if innerWidth < len(title)+2 {
+		innerWidth = len(title) + 2
+	}
+	boxWidth := innerWidth + 2 // +2 for left/right borders
+	boxHeight := len(buffers) + 2 // +2 for top/bottom borders
+
+	// Centre the box.
+	startCol := (vp.Width - boxWidth) / 2
+	if startCol < 0 {
+		startCol = 0
+	}
+	startRow := (vp.Height - boxHeight) / 2
+	if startRow < 1 {
+		startRow = 1
+	}
+
+	// Top border.
+	topLine := "┌" + title + strings.Repeat("─", innerWidth-len(title)) + "┐"
+	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow, startCol+1, topLine))
+
+	// Buffer rows.
+	for i, eb := range buffers {
+		row := startRow + 1 + i
+		prefix := "    "
+		if i == picker.Selected {
+			prefix = "  > "
+		}
+		name := pickerDisplayName(eb.Filename())
+
+		// Colour dirty filenames yellow/bold.
+		displayName := name
+		if eb.IsDirty() {
+			displayName = "\x1b[1;33m" + name + "\x1b[0m\x1b[7m"
+		}
+
+		padding := innerWidth - 4 - len(name)
+		if padding < 0 {
+			padding = 0
+		}
+		line := "│" + prefix + displayName + strings.Repeat(" ", padding) + "  │"
+		b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m%s\x1b[0m", row, startCol+1, line))
+	}
+
+	// Bottom border.
+	bottomLine := "└" + strings.Repeat("─", innerWidth) + "┘"
+	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow+boxHeight-1, startCol+1, bottomLine))
+
+	return b.String()
+}
+
+func pickerDisplayName(filename string) string {
+	if filename == "" {
+		return "[unnamed]"
+	}
+	return filepath.Base(filename)
+}
+
 func (r *Renderer) renderStatusBar(vp *Viewport, left, right string) {
 	row := vp.Height
 	r.buf.WriteString(fmt.Sprintf("\x1b[%d;1H", row))
 	// Reverse video for status bar.
 	r.buf.WriteString("\x1b[7m")
 
-	leftRunes := []rune(left)
-	rightRunes := []rune(right)
+	// Count visible (non-ANSI) characters for layout.
+	leftVisible := visibleLen(left)
+	rightVisible := visibleLen(right)
 	totalWidth := vp.Width
 
-	if len(leftRunes)+len(rightRunes) >= totalWidth {
+	leftStr := left
+	if leftVisible+rightVisible >= totalWidth {
 		// Truncate left side if needed.
-		maxLeft := totalWidth - len(rightRunes) - 1
+		maxLeft := totalWidth - rightVisible - 1
 		if maxLeft < 0 {
 			maxLeft = 0
 		}
-		if len(leftRunes) > maxLeft {
-			leftRunes = leftRunes[:maxLeft]
-		}
+		leftStr = truncateVisibleStr(left, maxLeft)
+		leftVisible = visibleLen(leftStr)
 	}
 
-	gap := totalWidth - len(leftRunes) - len(rightRunes)
+	gap := totalWidth - leftVisible - rightVisible
 	if gap < 0 {
 		gap = 0
 	}
 
-	r.buf.WriteString(string(leftRunes))
+	r.buf.WriteString(leftStr)
 	r.buf.WriteString(strings.Repeat(" ", gap))
-	r.buf.WriteString(string(rightRunes))
+	r.buf.WriteString(right)
 
 	// Reset attributes.
 	r.buf.WriteString("\x1b[0m")
+}
+
+// visibleLen counts characters that aren't part of ANSI escape sequences.
+func visibleLen(s string) int {
+	count := 0
+	runes := []rune(s)
+	i := 0
+	for i < len(runes) {
+		if runes[i] == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
+			i += 2
+			for i < len(runes) && !isAnsiTerminator(runes[i]) {
+				i++
+			}
+			if i < len(runes) {
+				i++
+			}
+		} else {
+			count++
+			i++
+		}
+	}
+	return count
+}
+
+// truncateVisibleStr truncates a string with ANSI codes to maxVisible visible characters.
+func truncateVisibleStr(s string, maxVisible int) string {
+	return TruncateVisible(s, maxVisible)
 }

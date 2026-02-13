@@ -88,16 +88,16 @@ func (t *Terminal) ReadKey() (Key, error) {
 
 // Key types.
 const (
-	KeyRune    = iota // Normal printable character
-	KeyEscape         // Escape key (standalone)
-	KeyEnter          // Enter/Return
-	KeyBackspace      // Backspace/Delete-backward
-	KeyUp             // Arrow up
-	KeyDown           // Arrow down
-	KeyLeft           // Arrow left
-	KeyRight          // Arrow right
-	KeyCtrlZ          // Ctrl+Z
-	KeyUnknown        // Unrecognised sequence
+	KeyRune      = iota // Normal printable character
+	KeyEscape           // Escape key (standalone)
+	KeyEnter            // Enter/Return
+	KeyBackspace        // Backspace/Delete-backward
+	KeyUp               // Arrow up
+	KeyDown             // Arrow down
+	KeyLeft             // Arrow left
+	KeyRight            // Arrow right
+	KeyCtrlZ            // Ctrl+Z
+	KeyUnknown          // Unrecognised sequence
 )
 
 type Key struct {
