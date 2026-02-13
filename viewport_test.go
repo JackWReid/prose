@@ -130,17 +130,44 @@ func TestCursorToDisplayLineWrapped(t *testing.T) {
 	}
 }
 
+func TestViewportVisibleLines(t *testing.T) {
+	vp := NewViewport(120, 10)
+
+	// At top (ScrollOffset==0): Height-1 - 1 = 8 (top padding)
+	if got := vp.VisibleLines(); got != 8 {
+		t.Errorf("at top: expected 8, got %d", got)
+	}
+
+	// When scrolled: Height-1 = 9 (no top padding)
+	vp.ScrollOffset = 1
+	if got := vp.VisibleLines(); got != 9 {
+		t.Errorf("scrolled: expected 9, got %d", got)
+	}
+}
+
+func TestViewportVisibleLinesSmallTerminal(t *testing.T) {
+	// Height=2 means vis=1; at scroll 0, vis>1 is false so no padding subtracted.
+	vp := NewViewport(80, 2)
+	if got := vp.VisibleLines(); got != 1 {
+		t.Errorf("small terminal: expected 1, got %d", got)
+	}
+}
+
 func TestViewportEnsureCursorVisible(t *testing.T) {
-	vp := NewViewport(120, 10) // 9 visible lines
+	vp := NewViewport(120, 10) // 8 visible lines at top (top padding)
 
 	vp.EnsureCursorVisible(0)
 	if vp.ScrollOffset != 0 {
 		t.Errorf("scroll should be 0, got %d", vp.ScrollOffset)
 	}
 
+	// Display line 15 with 8 visible lines at top: scroll to 15-8+1=8
+	// But once scrolled, VisibleLines becomes 9, so re-check is not needed
+	// because EnsureCursorVisible uses VisibleLines() which depends on current ScrollOffset.
 	vp.EnsureCursorVisible(15)
-	if vp.ScrollOffset != 7 { // 15 - 9 + 1 = 7
-		t.Errorf("scroll should be 7, got %d", vp.ScrollOffset)
+	// After first call: ScrollOffset was 0, vis=8, 15 >= 0+8, so ScrollOffset = 15-8+1 = 8
+	if vp.ScrollOffset != 8 {
+		t.Errorf("scroll should be 8, got %d", vp.ScrollOffset)
 	}
 
 	vp.EnsureCursorVisible(5)

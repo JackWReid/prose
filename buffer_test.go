@@ -203,6 +203,24 @@ func TestLoadNoTrailingNewline(t *testing.T) {
 	}
 }
 
+func TestWordCount(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello world", "foo bar baz", ""}
+	if got := buf.WordCount(); got != 5 {
+		t.Errorf("expected 5, got %d", got)
+	}
+
+	buf.Lines = []string{""}
+	if got := buf.WordCount(); got != 0 {
+		t.Errorf("empty buffer: expected 0, got %d", got)
+	}
+
+	buf.Lines = []string{"one"}
+	if got := buf.WordCount(); got != 1 {
+		t.Errorf("single word: expected 1, got %d", got)
+	}
+}
+
 func TestSaveAddsTrailingNewline(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out.txt")

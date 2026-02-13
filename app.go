@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 )
 
 // Mode represents the editor mode.
@@ -14,28 +15,31 @@ const (
 
 // App is the top-level editor state.
 type App struct {
-	buf       *Buffer
-	undo      *UndoStack
-	viewport  *Viewport
-	renderer  *Renderer
-	statusBar *StatusBar
-	terminal  *Terminal
-	mode      Mode
+	buf         *Buffer
+	undo        *UndoStack
+	viewport    *Viewport
+	renderer    *Renderer
+	statusBar   *StatusBar
+	terminal    *Terminal
+	highlighter Highlighter
+	mode        Mode
 
 	// Cursor position in buffer coordinates (line, col in runes).
 	cursorLine int
 	cursorCol  int
 
-	quit bool
+	quit          bool
+	quitAfterSave bool // Set by :wq on unnamed buffers.
 }
 
 func NewApp(filename string) *App {
 	return &App{
-		buf:       NewBuffer(filename),
-		undo:      NewUndoStack(),
-		renderer:  NewRenderer(),
-		statusBar: NewStatusBar(),
-		mode:      ModeDefault,
+		buf:         NewBuffer(filename),
+		undo:        NewUndoStack(),
+		renderer:    NewRenderer(),
+		statusBar:   NewStatusBar(),
+		highlighter: DetectHighlighter(filename),
+		mode:        ModeDefault,
 	}
 }
 
@@ -85,6 +89,9 @@ func (a *App) Run() error {
 }
 
 func (a *App) handleKey(key Key) {
+	// Clear any temporary status message on keypress.
+	a.statusBar.ClearMessage()
+
 	// If a prompt is active, handle it first.
 	if a.statusBar.Prompt != PromptNone {
 		a.handlePromptKey(key)
@@ -103,18 +110,10 @@ func (a *App) handleDefaultKey(key Key) {
 	switch key.Type {
 	case KeyRune:
 		switch key.Rune {
-		case 'e':
+		case 'i':
 			a.mode = ModeEdit
-		case 'x':
-			if a.buf.Dirty {
-				a.statusBar.StartPrompt(PromptQuitDirty)
-			} else {
-				a.quit = true
-			}
-		case 's':
-			a.save()
-		case 'r':
-			a.statusBar.StartPrompt(PromptRename)
+		case ':':
+			a.statusBar.StartPrompt(PromptCommand)
 		case 'h':
 			a.moveCursor(KeyLeft)
 		case 'j':
@@ -123,6 +122,10 @@ func (a *App) handleDefaultKey(key Key) {
 			a.moveCursor(KeyUp)
 		case 'l':
 			a.moveCursor(KeyRight)
+		case 'o':
+			a.cursorCol = a.buf.LineLen(a.cursorLine)
+			a.insertNewline()
+			a.mode = ModeEdit
 		}
 	case KeyUp, KeyDown, KeyLeft, KeyRight:
 		a.moveCursor(key.Type)
@@ -150,28 +153,86 @@ func (a *App) handleEditKey(key Key) {
 
 func (a *App) handlePromptKey(key Key) {
 	switch a.statusBar.Prompt {
-	case PromptQuitDirty:
-		switch key.Type {
-		case KeyRune:
-			switch key.Rune {
-			case 'x':
-				a.quit = true
-			case 's':
-				a.statusBar.ClearPrompt()
-				a.save()
-			}
-		case KeyEscape:
-			a.statusBar.ClearPrompt()
-		}
-
-	case PromptRename, PromptSaveNew:
+	case PromptSaveNew:
 		text, done, cancelled := a.statusBar.HandlePromptKey(key)
 		if cancelled {
+			a.quitAfterSave = false
 			return
 		}
 		if done && text != "" {
 			a.buf.Save(text)
+			a.highlighter = DetectHighlighter(a.buf.Filename)
+			if a.quitAfterSave {
+				a.quit = true
+				a.quitAfterSave = false
+			}
 		}
+
+	case PromptCommand:
+		text, done, cancelled := a.statusBar.HandlePromptKey(key)
+		if cancelled {
+			return
+		}
+		if done {
+			a.executeCommand(text)
+		}
+	}
+}
+
+func (a *App) executeCommand(cmd string) {
+	cmd = strings.TrimSpace(cmd)
+
+	switch {
+	case cmd == "q":
+		if a.buf.Dirty {
+			a.statusBar.SetMessage("Unsaved changes. Use :q! to discard, or :w to save.")
+		} else {
+			a.quit = true
+		}
+
+	case cmd == "q!":
+		a.quit = true
+
+	case cmd == "w":
+		a.save()
+
+	case strings.HasPrefix(cmd, "w "):
+		filename := strings.TrimSpace(cmd[2:])
+		if filename != "" {
+			a.buf.Save(filename)
+			a.highlighter = DetectHighlighter(a.buf.Filename)
+		}
+
+	case cmd == "wq":
+		if a.buf.Filename == "" {
+			a.quitAfterSave = true
+			a.statusBar.StartPrompt(PromptSaveNew)
+		} else {
+			a.buf.Save("")
+			a.quit = true
+		}
+
+	case strings.HasPrefix(cmd, "rename "):
+		newName := strings.TrimSpace(cmd[7:])
+		if newName == "" {
+			return
+		}
+		oldName := a.buf.Filename
+		if oldName == "" {
+			// Unnamed buffer — behaves like :w <filename>.
+			a.buf.Save(newName)
+			a.highlighter = DetectHighlighter(a.buf.Filename)
+		} else {
+			if err := os.Rename(oldName, newName); err != nil {
+				a.statusBar.SetMessage("Rename failed: " + err.Error())
+				return
+			}
+			a.buf.Filename = newName
+			a.highlighter = DetectHighlighter(a.buf.Filename)
+		}
+
+	default:
+		a.statusBar.SetMessage("Unknown command: " + cmd)
 	}
 }
 
@@ -276,8 +337,8 @@ func (a *App) render() {
 	a.viewport.EnsureCursorVisible(cursorDL)
 
 	statusLeft := a.statusBar.FormatLeft(a.buf.Filename, a.buf.Dirty)
-	statusRight := a.statusBar.FormatRight(a.mode)
+	statusRight := a.statusBar.FormatRight(a.mode, a.buf.WordCount())
 
-	frame := a.renderer.RenderFrame(displayLines, a.viewport, cursorDL, cursorDC, statusLeft, statusRight)
+	frame := a.renderer.RenderFrame(displayLines, a.viewport, cursorDL, cursorDC, statusLeft, statusRight, a.highlighter)
 	os.Stdout.WriteString(frame)
 }

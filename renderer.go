@@ -22,6 +22,7 @@ func (r *Renderer) RenderFrame(
 	cursorDisplayCol int,
 	statusLeft string,
 	statusRight string,
+	highlighter Highlighter,
 ) string {
 	r.buf.Reset()
 
@@ -32,6 +33,10 @@ func (r *Renderer) RenderFrame(
 	r.buf.WriteString("\x1b[2J\x1b[H")
 
 	visibleLines := vp.VisibleLines()
+	topPadding := 0
+	if vp.ScrollOffset == 0 {
+		topPadding = 1
+	}
 	marginStr := ""
 	if vp.LeftMargin > 0 {
 		marginStr = strings.Repeat(" ", vp.LeftMargin)
@@ -39,15 +44,13 @@ func (r *Renderer) RenderFrame(
 
 	for i := 0; i < visibleLines; i++ {
 		idx := vp.ScrollOffset + i
-		// Move to row (1-indexed).
-		r.buf.WriteString(fmt.Sprintf("\x1b[%d;1H", i+1))
+		// Move to row (1-indexed), offset by top padding.
+		row := i + 1 + topPadding
+		r.buf.WriteString(fmt.Sprintf("\x1b[%d;1H", row))
 		if idx < len(displayLines) {
 			text := displayLines[idx].Text
-			// Truncate if wider than column.
-			runes := []rune(text)
-			if len(runes) > vp.ColWidth {
-				text = string(runes[:vp.ColWidth])
-			}
+			text = highlighter.Highlight(text)
+			text = TruncateVisible(text, vp.ColWidth)
 			r.buf.WriteString(marginStr)
 			r.buf.WriteString(text)
 		}
@@ -57,7 +60,7 @@ func (r *Renderer) RenderFrame(
 	r.renderStatusBar(vp, statusLeft, statusRight)
 
 	// Position the cursor.
-	screenRow := cursorDisplayLine - vp.ScrollOffset + 1
+	screenRow := cursorDisplayLine - vp.ScrollOffset + 1 + topPadding
 	screenCol := vp.LeftMargin + cursorDisplayCol + 1
 	r.buf.WriteString(fmt.Sprintf("\x1b[%d;%dH", screenRow, screenCol))
 

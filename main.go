@@ -5,6 +5,8 @@ import (
 	"os"
 )
 
+const Version = "1.2.0"
+
 func main() {
 	var filename string
 	if len(os.Args) > 1 {

@@ -156,3 +156,12 @@ func (b *Buffer) LineLen(line int) int {
 func (b *Buffer) LineCount() int {
 	return len(b.Lines)
 }
+
+// WordCount returns the total number of words across all lines.
+func (b *Buffer) WordCount() int {
+	count := 0
+	for _, line := range b.Lines {
+		count += len(strings.Fields(line))
+	}
+	return count
+}

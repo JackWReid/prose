@@ -1,21 +1,24 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 // PromptType indicates what kind of prompt is active.
 type PromptType int
 
 const (
-	PromptNone     PromptType = iota
-	PromptRename              // "Save as: " filename input
-	PromptQuitDirty           // "Unsaved changes. x to discard, s to save."
-	PromptSaveNew             // "Save as: " for unnamed buffer on first save
+	PromptNone    PromptType = iota
+	PromptSaveNew                    // "Save as: " for unnamed buffer on first save
+	PromptCommand                    // ":" command input
 )
 
 // StatusBar generates status bar text and handles prompt state.
 type StatusBar struct {
-	Prompt     PromptType
-	PromptText string // User input during rename/save-as prompts.
+	Prompt        PromptType
+	PromptText    string // User input during rename/save-as prompts.
+	StatusMessage string // Temporary message (e.g. error from command mode).
 }
 
 func NewStatusBar() *StatusBar {
@@ -24,17 +27,18 @@ func NewStatusBar() *StatusBar {
 
 // FormatLeft returns the left-aligned portion of the status bar.
 func (s *StatusBar) FormatLeft(filename string, dirty bool) string {
-	if s.Prompt == PromptRename || s.Prompt == PromptSaveNew {
+	if s.Prompt == PromptSaveNew {
 		return fmt.Sprintf(" Save as: %s", s.PromptText)
 	}
-	if s.Prompt == PromptQuitDirty {
-		return " Unsaved changes. Press x to discard, or s to save."
+	if s.Prompt == PromptCommand {
+		return fmt.Sprintf(" :%s", s.PromptText)
 	}
 
-	name := filename
-	if name == "" {
-		name = "[unnamed]"
+	if s.StatusMessage != "" {
+		return " " + s.StatusMessage
 	}
+
+	name := truncatePath(filename)
 	mod := ""
 	if dirty {
 		mod = " [+]"
@@ -43,17 +47,18 @@ func (s *StatusBar) FormatLeft(filename string, dirty bool) string {
 }
 
 // FormatRight returns the right-aligned portion of the status bar.
-func (s *StatusBar) FormatRight(mode Mode) string {
+func (s *StatusBar) FormatRight(mode Mode, wordCount int) string {
 	if s.Prompt != PromptNone {
 		return ""
 	}
+	modeStr := ""
 	switch mode {
 	case ModeDefault:
-		return "DEFAULT "
+		modeStr = "DEFAULT"
 	case ModeEdit:
-		return "EDIT "
+		modeStr = "EDIT"
 	}
-	return ""
+	return fmt.Sprintf("%d words  %s ", wordCount, modeStr)
 }
 
 // StartPrompt begins a prompt of the given type.
@@ -66,6 +71,29 @@ func (s *StatusBar) StartPrompt(pt PromptType) {
 func (s *StatusBar) ClearPrompt() {
 	s.Prompt = PromptNone
 	s.PromptText = ""
+}
+
+// SetMessage sets a temporary status message.
+func (s *StatusBar) SetMessage(msg string) {
+	s.StatusMessage = msg
+}
+
+// ClearMessage clears the temporary status message.
+func (s *StatusBar) ClearMessage() {
+	s.StatusMessage = ""
+}
+
+// truncatePath shortens a file path to parent/basename.
+func truncatePath(filename string) string {
+	if filename == "" {
+		return "[unnamed]"
+	}
+	dir := filepath.Base(filepath.Dir(filename))
+	base := filepath.Base(filename)
+	if dir == "." || dir == "/" {
+		return base
+	}
+	return dir + "/" + base
 }
 
 // HandlePromptKey processes a keypress during an active prompt.

@@ -110,8 +110,14 @@ func (v *Viewport) Resize(termWidth, termHeight int) {
 }
 
 // VisibleLines returns the number of text lines visible (excluding status bar).
+// When at the top of the document (ScrollOffset == 0), one line is reserved
+// for top padding, giving breathing room from terminal chrome.
 func (v *Viewport) VisibleLines() int {
-	return v.Height - 1
+	vis := v.Height - 1
+	if v.ScrollOffset == 0 && vis > 1 {
+		vis--
+	}
+	return vis
 }
 
 // EnsureCursorVisible adjusts ScrollOffset so the given display line is visible.
