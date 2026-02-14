@@ -8,27 +8,27 @@ import (
 func TestFormatLeftFilename(t *testing.T) {
 	sb := NewStatusBar()
 
-	got := sb.FormatLeft("test.txt", false, "")
+	got := sb.FormatLeft("test.txt", false, "", 0)
 	if got != " test.txt" {
 		t.Errorf("got %q", got)
 	}
 
-	got = sb.FormatLeft("test.txt", true, "")
-	// Dirty filename should contain yellow/bold ANSI code.
-	if !strings.Contains(got, "\x1b[1;33m") {
-		t.Errorf("dirty: expected yellow/bold ANSI, got %q", got)
+	got = sb.FormatLeft("test.txt", true, "", 0)
+	// Dirty filename should contain bold + darker orange ANSI code (background in reverse video).
+	if !strings.Contains(got, "\x1b[1;48;5;208m") {
+		t.Errorf("dirty: expected bold + darker orange ANSI, got %q", got)
 	}
 	if !strings.Contains(got, "test.txt") {
 		t.Errorf("dirty: should contain filename, got %q", got)
 	}
 
-	got = sb.FormatLeft("", false, "")
+	got = sb.FormatLeft("", false, "", 0)
 	if got != " [unnamed]" {
 		t.Errorf("unnamed: %q", got)
 	}
 
 	// Full path should be truncated to parent/base.
-	got = sb.FormatLeft("/Users/jack/Developer/prose/main.go", false, "")
+	got = sb.FormatLeft("/Users/jack/Developer/prose/main.go", false, "", 0)
 	if got != " prose/main.go" {
 		t.Errorf("truncated path: %q", got)
 	}
@@ -37,13 +37,13 @@ func TestFormatLeftFilename(t *testing.T) {
 func TestFormatLeftBufferInfo(t *testing.T) {
 	sb := NewStatusBar()
 
-	got := sb.FormatLeft("test.txt", false, "[2/3]")
+	got := sb.FormatLeft("test.txt", false, "[2/3]", 0)
 	if !strings.Contains(got, "test.txt") || !strings.Contains(got, "[2/3]") {
 		t.Errorf("buffer info: %q", got)
 	}
 
 	// No buffer info for single buffer.
-	got = sb.FormatLeft("test.txt", false, "")
+	got = sb.FormatLeft("test.txt", false, "", 0)
 	if strings.Contains(got, "[") {
 		t.Errorf("single buffer should have no indicator: %q", got)
 	}
@@ -71,12 +71,12 @@ func TestTruncatePath(t *testing.T) {
 func TestStatusMessage(t *testing.T) {
 	sb := NewStatusBar()
 	sb.SetMessage("Error: unsaved changes")
-	got := sb.FormatLeft("test.txt", false, "")
+	got := sb.FormatLeft("test.txt", false, "", 0)
 	if got != " Error: unsaved changes" {
 		t.Errorf("status message: %q", got)
 	}
 	sb.ClearMessage()
-	got = sb.FormatLeft("test.txt", false, "")
+	got = sb.FormatLeft("test.txt", false, "", 0)
 	if got != " test.txt" {
 		t.Errorf("after clear: %q", got)
 	}
@@ -87,14 +87,14 @@ func TestFormatLeftPrompt(t *testing.T) {
 	sb.StartPrompt(PromptSaveNew)
 	sb.PromptText = "foo.txt"
 
-	got := sb.FormatLeft("test.txt", false, "")
+	got := sb.FormatLeft("test.txt", false, "", 0)
 	if got != " Save as: foo.txt" {
 		t.Errorf("save-new prompt: %q", got)
 	}
 
 	sb.StartPrompt(PromptCommand)
 	sb.PromptText = "wq"
-	got = sb.FormatLeft("test.txt", true, "")
+	got = sb.FormatLeft("test.txt", true, "", 0)
 	if got != " :wq" {
 		t.Errorf("command prompt: %q", got)
 	}
@@ -102,14 +102,14 @@ func TestFormatLeftPrompt(t *testing.T) {
 
 func TestFormatRight(t *testing.T) {
 	sb := NewStatusBar()
-	if got := sb.FormatRight(ModeDefault, 42); got != "42 words  DEFAULT " {
+	if got := sb.FormatRight(ModeDefault, 42, 0); got != "42 words  DEFAULT " {
 		t.Errorf("default mode: %q", got)
 	}
-	if got := sb.FormatRight(ModeEdit, 0); got != "0 words  EDIT " {
+	if got := sb.FormatRight(ModeEdit, 0, 0); got != "0 words  EDIT " {
 		t.Errorf("edit mode: %q", got)
 	}
 	sb.StartPrompt(PromptSaveNew)
-	if got := sb.FormatRight(ModeDefault, 10); got != "" {
+	if got := sb.FormatRight(ModeDefault, 10, 0); got != "" {
 		t.Errorf("during prompt: %q", got)
 	}
 }

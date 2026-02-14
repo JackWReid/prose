@@ -27,7 +27,8 @@ func NewStatusBar() *StatusBar {
 
 // FormatLeft returns the left-aligned portion of the status bar.
 // bufferInfo is an optional "[2/3]" indicator when multiple buffers are open.
-func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string) string {
+// spellErrorCount is the number of spelling errors in the buffer.
+func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string, spellErrorCount int) string {
 	if s.Prompt == PromptSaveNew {
 		return fmt.Sprintf(" Save as: %s", s.PromptText)
 	}
@@ -41,19 +42,28 @@ func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string) s
 
 	name := truncatePath(filename)
 
-	// Colour dirty filenames yellow/bold via ANSI codes.
+	// Colour dirty filenames bold + darker orange via ANSI codes.
+	// In reverse video mode, use background code to set text color.
 	if dirty {
-		name = "\x1b[1;33m" + name + "\x1b[0m\x1b[7m"
+		name = "\x1b[1;48;5;208m" + name + "\x1b[22;49m"
+	}
+
+	// Add spell error indicator (red dot) if there are errors
+	// In reverse video mode, background codes affect foreground and vice versa
+	// So we use background code (48) to get red text in the inverted status bar
+	spellIndicator := ""
+	if spellErrorCount > 0 {
+		spellIndicator = " \x1b[48;5;9m●\x1b[49m"
 	}
 
 	if bufferInfo != "" {
-		return fmt.Sprintf(" %s %s", name, bufferInfo)
+		return fmt.Sprintf(" %s%s %s", name, spellIndicator, bufferInfo)
 	}
-	return fmt.Sprintf(" %s", name)
+	return fmt.Sprintf(" %s%s", name, spellIndicator)
 }
 
 // FormatRight returns the right-aligned portion of the status bar.
-func (s *StatusBar) FormatRight(mode Mode, wordCount int) string {
+func (s *StatusBar) FormatRight(mode Mode, wordCount int, spellErrorCount int) string {
 	if s.Prompt != PromptNone {
 		return ""
 	}
@@ -64,7 +74,14 @@ func (s *StatusBar) FormatRight(mode Mode, wordCount int) string {
 	case ModeEdit:
 		modeStr = "EDIT"
 	}
-	return fmt.Sprintf("%d words  %s ", wordCount, modeStr)
+
+	// Show error count if there are spelling errors
+	errorStr := ""
+	if spellErrorCount > 0 {
+		errorStr = fmt.Sprintf("%d errors  ", spellErrorCount)
+	}
+
+	return fmt.Sprintf("%s%d words  %s ", errorStr, wordCount, modeStr)
 }
 
 // StartPrompt begins a prompt of the given type.

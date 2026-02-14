@@ -20,14 +20,15 @@ type App struct {
 	buffers       []*EditorBuffer
 	currentBuffer int
 
-	viewport  *Viewport
-	renderer  *Renderer
-	statusBar *StatusBar
-	terminal  *Terminal
-	picker    *Picker
-	outline   *Outline
-	browser   *Browser
-	mode      Mode
+	viewport     *Viewport
+	renderer     *Renderer
+	statusBar    *StatusBar
+	terminal     *Terminal
+	picker       *Picker
+	outline      *Outline
+	browser      *Browser
+	spellChecker *SpellChecker
+	mode         Mode
 
 	leaderPending bool   // Space was pressed, awaiting second key.
 	dPending      bool   // 'd' was pressed, awaiting second 'd' for dd.
@@ -70,6 +71,24 @@ func (a *App) Run() error {
 		}
 	}
 
+	// Initialize spell checker.
+	spellChecker, err := NewSpellChecker()
+	if err != nil {
+		return fmt.Errorf("failed to initialize spell checker: %v", err)
+	}
+	a.spellChecker = spellChecker
+
+	// Run initial spell check on all buffers that should be checked.
+	for _, eb := range a.buffers {
+		if eb.ShouldSpellCheck() {
+			eb.spellErrors = nil
+			for i := 0; i < len(eb.buf.Lines); i++ {
+				lineErrors := spellChecker.CheckLine(i, eb.buf.Lines[i])
+				eb.spellErrors = append(eb.spellErrors, lineErrors...)
+			}
+		}
+	}
+
 	// Set up terminal.
 	t, err := NewTerminal()
 	if err != nil {
@@ -85,6 +104,9 @@ func (a *App) Run() error {
 
 	// Main event loop.
 	for !a.quit {
+		// Perform debounced spell checking.
+		a.currentBuf().PerformSpellCheck(a.spellChecker)
+
 		// Check for resize signal (non-blocking).
 		select {
 		case <-t.SigwinchChan():
@@ -736,6 +758,7 @@ func (a *App) insertChar(ch rune) {
 	eb.buf.InsertChar(eb.cursorLine, eb.cursorCol, ch)
 	eb.undo.PushInsertChar(eb.cursorLine, eb.cursorCol, ch)
 	eb.cursorCol++
+	eb.ScheduleSpellCheck()
 }
 
 // insertNewline splits the current line at the cursor.
@@ -745,6 +768,7 @@ func (a *App) insertNewline() {
 	eb.buf.InsertNewline(eb.cursorLine, eb.cursorCol)
 	eb.cursorLine++
 	eb.cursorCol = 0
+	eb.ScheduleSpellCheck()
 }
 
 // deleteChar deletes the character before the cursor (backspace).
@@ -775,6 +799,7 @@ func (a *App) deleteChar() {
 		eb.cursorLine--
 		eb.cursorCol = prevLineLen
 	}
+	eb.ScheduleSpellCheck()
 }
 
 // moveCursor moves the cursor in the given direction, clamping to valid positions.
@@ -839,6 +864,7 @@ func (a *App) pasteBelow() {
 	eb.undo.PushInsertWholeLine(eb.cursorLine + 1)
 	eb.cursorLine++
 	eb.cursorCol = 0
+	eb.ScheduleSpellCheck()
 }
 
 func (a *App) pasteAbove() {
@@ -849,6 +875,7 @@ func (a *App) pasteAbove() {
 	eb.buf.InsertLine(eb.cursorLine, a.yankBuffer)
 	eb.undo.PushInsertWholeLine(eb.cursorLine)
 	eb.cursorCol = 0
+	eb.ScheduleSpellCheck()
 }
 
 func (a *App) undoAction() {
@@ -857,6 +884,7 @@ func (a *App) undoAction() {
 	if ok {
 		eb.cursorLine = line
 		eb.cursorCol = col
+		eb.ScheduleSpellCheck()
 	}
 }
 
@@ -866,6 +894,7 @@ func (a *App) redoAction() {
 	if ok {
 		eb.cursorLine = line
 		eb.cursorCol = col
+		eb.ScheduleSpellCheck()
 	}
 }
 
@@ -883,6 +912,7 @@ func (a *App) deleteWholeLine() {
 	if eb.cursorCol > eb.buf.LineLen(eb.cursorLine) {
 		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 	}
+	eb.ScheduleSpellCheck()
 }
 
 // deleteCharForward deletes the character at the cursor position (Del key).
@@ -901,6 +931,7 @@ func (a *App) deleteCharForward() {
 		eb.buf.JoinLines(eb.cursorLine)
 		eb.undo.PushDeleteLine(eb.cursorLine, lineLen, eb.cursorLine, eb.cursorCol)
 	}
+	eb.ScheduleSpellCheck()
 }
 
 // scrollDown moves the cursor down by n lines.
@@ -998,10 +1029,10 @@ func (a *App) render() {
 		bufferInfo = formatBufferInfo(a.currentBuffer+1, len(a.buffers))
 	}
 
-	statusLeft := a.statusBar.FormatLeft(eb.Filename(), eb.IsDirty(), bufferInfo)
-	statusRight := a.statusBar.FormatRight(a.mode, eb.WordCount())
+	statusLeft := a.statusBar.FormatLeft(eb.Filename(), eb.IsDirty(), bufferInfo, eb.SpellErrorCount())
+	statusRight := a.statusBar.FormatRight(a.mode, eb.WordCount(), eb.SpellErrorCount())
 
-	frame := a.renderer.RenderFrame(displayLines, a.viewport, eb.scrollOffset, cursorDL, cursorDC, statusLeft, statusRight, eb.highlighter)
+	frame := a.renderer.RenderFrame(displayLines, a.viewport, eb.scrollOffset, cursorDL, cursorDC, statusLeft, statusRight, eb.highlighter, eb.spellErrors)
 
 	// Render picker overlay if active.
 	if a.picker.Active {

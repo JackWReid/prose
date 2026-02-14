@@ -25,6 +25,7 @@ func (r *Renderer) RenderFrame(
 	statusLeft string,
 	statusRight string,
 	highlighter Highlighter,
+	spellErrors []SpellError,
 ) string {
 	r.buf.Reset()
 
@@ -52,6 +53,7 @@ func (r *Renderer) RenderFrame(
 		if idx < len(displayLines) {
 			text := displayLines[idx].Text
 			text = highlighter.Highlight(text)
+			text = r.applySpellHighlighting(text, displayLines[idx], spellErrors)
 			text = TruncateVisible(text, vp.ColWidth)
 			r.buf.WriteString(marginStr)
 			r.buf.WriteString(text)
@@ -385,4 +387,81 @@ func visibleLen(s string) int {
 // truncateVisibleStr truncates a string with ANSI codes to maxVisible visible characters.
 func truncateVisibleStr(s string, maxVisible int) string {
 	return TruncateVisible(s, maxVisible)
+}
+
+// applySpellHighlighting applies light red background highlighting to misspelled words.
+// It inserts ANSI background codes while preserving existing foreground syntax highlighting.
+func (r *Renderer) applySpellHighlighting(text string, displayLine DisplayLine, spellErrors []SpellError) string {
+	// Find errors that apply to this display line
+	var relevantErrors []SpellError
+	for _, err := range spellErrors {
+		if err.Line == displayLine.BufferLine {
+			relevantErrors = append(relevantErrors, err)
+		}
+	}
+
+	if len(relevantErrors) == 0 {
+		return text
+	}
+
+	// Parse the text to track ANSI codes and real character positions
+	runes := []rune(text)
+	var result strings.Builder
+	realCol := 0        // Real character position (excluding ANSI codes)
+	i := 0              // Current index in runes
+	inANSI := false     // Whether we're inside an ANSI escape sequence
+	activeErrors := make(map[int]bool) // Track which errors are currently highlighted
+
+	for i < len(runes) {
+		r := runes[i]
+
+		// Detect ANSI escape sequence start
+		if r == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
+			inANSI = true
+			result.WriteRune(r)
+			i++
+			continue
+		}
+
+		// If in ANSI sequence, copy until 'm' (end of sequence)
+		if inANSI {
+			result.WriteRune(r)
+			if r == 'm' {
+				inANSI = false
+			}
+			i++
+			continue
+		}
+
+		// Check if we're at the start of any error
+		for idx, err := range relevantErrors {
+			if realCol == err.StartCol && !activeErrors[idx] {
+				// Start spell error highlighting: dark text on light red background
+				// Set foreground to black and background to light red
+				result.WriteString("\x1b[38;5;0m\x1b[48;5;224m")
+				activeErrors[idx] = true
+			}
+		}
+
+		// Write the actual character
+		result.WriteRune(r)
+		realCol++
+		i++
+
+		// Check if we're at the end of any error
+		for idx, err := range relevantErrors {
+			if realCol == err.EndCol && activeErrors[idx] {
+				// Reset foreground and background to restore syntax highlighting
+				result.WriteString("\x1b[39m\x1b[49m")
+				delete(activeErrors, idx)
+			}
+		}
+	}
+
+	// Close any still-active error highlighting at end of line
+	if len(activeErrors) > 0 {
+		result.WriteString("\x1b[39m\x1b[49m")
+	}
+
+	return result.String()
 }

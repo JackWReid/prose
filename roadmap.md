@@ -37,5 +37,18 @@
 - English language spellcheck based on some system dictionary
 
 ## 1.9
-- Enter line-select mode with <Shift-V>, y and d then act on whole lines
-- App-level scratch buffer. Send selections with s for lines in line-select mode and ss for a single line in Default mode.
+- `x` to jump cursor to next spelling error, `X` to jump to the previous
+- Enter line-select mode with <Shift-V>, `y` and `d` then act on whole lines
+- App-level scratch buffer. `S` to jump to the scratch buffer or create and jump if not yet created in this session.
+- Send selections with `s` for lines in line-select mode and `ss` for a single line in Default mode.
+
+## 1.10
+- Slash-search. The `/` command changes the left part of the status line to the search term input. On `esc`, drop out of search. On enter, matching pieces of text are highlighted in reverse video. If no matches, drop out of search.
+- `n` to jump to the next search highlight. `N` to jump to the previous search highlight.
+- "4 matches" counter in the right statusline while search is active
+- Double tap `//` to clear search
+
+## 1.11
+- Comprehensive user help documentation and/or man page.
+- `w` to jump to next word. `b` to jump to previous word.
+
