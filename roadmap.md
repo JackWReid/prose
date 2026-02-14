@@ -65,3 +65,6 @@
 
 ## 1.15
 - Fix text highlights (spellcheck and search) bleeding across soft-wrapped lines
+
+## 1.16
+- Reduce content column width from 100 to 60 characters

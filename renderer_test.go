@@ -49,12 +49,12 @@ func TestRenderFrameStatusBarReverse(t *testing.T) {
 func TestRenderFrameWithMargin(t *testing.T) {
 	r := NewRenderer()
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "centered"}}
-	vp := NewViewport(120, 5) // margin = (120-100)/2 = 10
+	vp := NewViewport(120, 5) // margin = (120-60)/2 = 30
 
 	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
 	// The text should be preceded by spaces for the left margin.
-	if !strings.Contains(frame, strings.Repeat(" ", 10)+"centered") {
+	if !strings.Contains(frame, strings.Repeat(" ", 30)+"centered") {
 		t.Error("text should be indented by left margin")
 	}
 }
@@ -82,9 +82,9 @@ func TestRenderFrameCursorPosition(t *testing.T) {
 
 	frame := r.RenderFrame(dls, vp, 0, 0, 3, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
-	// At scroll 0, top padding = 1. Cursor should be at row 2, col margin+3+1 = 14.
-	if !strings.Contains(frame, "\x1b[2;14H") {
-		t.Errorf("expected cursor at row 2, col 14. Frame: %q", frame)
+	// At scroll 0, top padding = 1. Cursor should be at row 2, col margin+3+1 = 34.
+	if !strings.Contains(frame, "\x1b[2;34H") {
+		t.Errorf("expected cursor at row 2, col 34. Frame: %q", frame)
 	}
 }
 
@@ -98,9 +98,9 @@ func TestRenderFrameCursorPositionScrolled(t *testing.T) {
 
 	frame := r.RenderFrame(dls, vp, 5, 7, 2, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
-	// screenRow = 7 - 5 + 1 + 0 = 3, screenCol = 10 + 2 + 1 = 13
-	if !strings.Contains(frame, "\x1b[3;13H") {
-		t.Errorf("expected cursor at row 3, col 13. Frame: %q", frame)
+	// screenRow = 7 - 5 + 1 + 0 = 3, screenCol = 30 + 2 + 1 = 33
+	if !strings.Contains(frame, "\x1b[3;33H") {
+		t.Errorf("expected cursor at row 3, col 33. Frame: %q", frame)
 	}
 }
 

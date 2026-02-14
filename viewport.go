@@ -1,6 +1,6 @@
 package main
 
-const ColumnWidth = 100
+const ColumnWidth = 60
 
 // DisplayLine represents one visual line on screen, mapped back to its source.
 type DisplayLine struct {

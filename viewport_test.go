@@ -170,11 +170,11 @@ func TestViewportEnsureCursorVisible(t *testing.T) {
 
 func TestViewportLayoutWide(t *testing.T) {
 	vp := NewViewport(200, 50)
-	if vp.ColWidth != 100 {
-		t.Errorf("col width should be 100, got %d", vp.ColWidth)
+	if vp.ColWidth != 60 {
+		t.Errorf("col width should be 60, got %d", vp.ColWidth)
 	}
-	if vp.LeftMargin != 50 {
-		t.Errorf("left margin should be 50, got %d", vp.LeftMargin)
+	if vp.LeftMargin != 70 {
+		t.Errorf("left margin should be 70, got %d", vp.LeftMargin)
 	}
 }
 
@@ -190,11 +190,11 @@ func TestViewportLayoutNarrow(t *testing.T) {
 
 func TestViewportResize(t *testing.T) {
 	vp := NewViewport(200, 50)
-	if vp.LeftMargin != 50 {
+	if vp.LeftMargin != 70 {
 		t.Fatalf("initial margin: %d", vp.LeftMargin)
 	}
-	vp.Resize(80, 24)
-	if vp.ColWidth != 80 || vp.LeftMargin != 0 {
+	vp.Resize(50, 24)
+	if vp.ColWidth != 50 || vp.LeftMargin != 0 {
 		t.Errorf("after resize: width=%d, margin=%d", vp.ColWidth, vp.LeftMargin)
 	}
 }
