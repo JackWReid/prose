@@ -52,3 +52,6 @@
 - Comprehensive user help documentation and/or man page.
 - `w` to jump to next word. `b` to jump to previous word.
 
+## 1.12
+- TBD
+

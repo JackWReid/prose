@@ -19,6 +19,13 @@ type SpellError struct {
 	Word     string // The misspelled word
 }
 
+// WordBoundary represents a word location in the buffer for navigation
+type WordBoundary struct {
+	Line     int // Buffer line number
+	StartCol int // Starting column (rune index)
+	EndCol   int // Ending column (rune index)
+}
+
 // SpellChecker provides spell checking functionality using a fuzzy model
 type SpellChecker struct {
 	model *fuzzy.Model
@@ -151,4 +158,63 @@ func (sc *SpellChecker) CheckLine(lineNum int, line string) []SpellError {
 	}
 
 	return errors
+}
+
+// FindWordBoundaries scans the entire buffer and returns all word boundaries
+// Words are defined using Vim-style definition: sequences of letters, digits, and underscores
+func FindWordBoundaries(buf *Buffer) []WordBoundary {
+	var boundaries []WordBoundary
+
+	for lineNum := 0; lineNum < len(buf.Lines); lineNum++ {
+		line := buf.Lines[lineNum]
+		lineBoundaries := extractWordBoundariesFromLine(lineNum, line)
+		boundaries = append(boundaries, lineBoundaries...)
+	}
+
+	return boundaries
+}
+
+// extractWordBoundariesFromLine finds all word boundaries in a single line
+// Words are defined as sequences of alphanumeric characters and underscores
+// This follows Vim's word definition where "hello_world" is one word, "hello-world" is two
+func extractWordBoundariesFromLine(lineNum int, line string) []WordBoundary {
+	var boundaries []WordBoundary
+	runes := []rune(line)
+
+	inWord := false
+	var startCol int
+
+	for i, r := range runes {
+		// Vim-style word character: letter, digit, or underscore
+		isWordChar := unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+
+		if isWordChar {
+			if !inWord {
+				// Start of a new word
+				startCol = i
+				inWord = true
+			}
+		} else {
+			if inWord {
+				// End of word
+				boundaries = append(boundaries, WordBoundary{
+					Line:     lineNum,
+					StartCol: startCol,
+					EndCol:   i,
+				})
+				inWord = false
+			}
+		}
+	}
+
+	// Handle word at end of line
+	if inWord {
+		boundaries = append(boundaries, WordBoundary{
+			Line:     lineNum,
+			StartCol: startCol,
+			EndCol:   len(runes),
+		})
+	}
+
+	return boundaries
 }

@@ -1,0 +1,361 @@
+.TH PROSE 1 "February 2026" "prose 1.11.0" "User Commands"
+.SH NAME
+prose \- a vim-inspired text editor for prose writing
+.SH SYNOPSIS
+.B prose
+.RI [ file ...]
+.SH DESCRIPTION
+.B prose
+is a modal text editor inspired by vim, designed specifically for writing prose. It features real-time British English spell checking, multiple file support with tabs, Markdown syntax highlighting, and vim-like navigation and editing commands.
+.PP
+prose operates in three main modes:
+.TP
+.B Default Mode
+For navigation and text manipulation. This is the initial mode.
+.TP
+.B Edit Mode
+For inserting and editing text (entered with
+.BR i ,
+.BR o ,
+.BR O ,
+or
+.BR A ).
+.TP
+.B Line-Select Mode
+For selecting and operating on entire lines (entered with
+.BR V ).
+.SH MODES
+.SS Default Mode
+The primary mode for navigation and issuing commands. Press
+.B Esc
+from any other mode to return to Default mode.
+.SS Edit Mode
+Insert and edit text freely. Press
+.B Esc
+to return to Default mode. Press
+.B Enter
+to create a new line.
+.SS Line-Select Mode
+Select entire lines for deletion or yanking. Use
+.B j
+and
+.B k
+to extend the selection. Press
+.B Esc
+to return to Default mode.
+.SH NAVIGATION
+.SS Basic Movement (Default Mode)
+.TP
+.BR h ", " j ", " k ", " l
+Move left, down, up, right (vim-style)
+.TP
+.BR "Arrow Keys"
+Also work in Default and Edit modes
+.TP
+.BR "Home" ", " "End"
+Jump to start or end of line
+.TP
+.BR ^
+Jump to first non-whitespace character on line
+.TP
+.BR $
+Jump to end of line
+.TP
+.BR w
+Jump to the start of the next word
+.TP
+.BR b
+Jump to the start of the previous word
+.TP
+.B gg
+Jump to first line of document
+.TP
+.B G
+Jump to last line of document
+.TP
+.BR "Ctrl-U" ", " "Page Up"
+Scroll up by one window height
+.TP
+.BR "Ctrl-D" ", " "Page Down"
+Scroll down by one window height
+.TP
+.BR "Shift-Page Up"
+Jump to first line (same as gg)
+.TP
+.BR "Shift-Page Down"
+Jump to last line (same as G)
+.TP
+.B Mouse Click
+Position cursor at click location
+.SS Spell Check Navigation (Default Mode)
+.TP
+.B x
+Jump to next spelling error
+.TP
+.B X
+Jump to previous spelling error
+.SS Search Navigation (Default Mode)
+.TP
+.B /
+Enter search mode. Type search term and press Enter to highlight matches
+.TP
+.B //
+Clear current search (double tap)
+.TP
+.B n
+Jump to next search match
+.TP
+.B N
+Jump to previous search match
+.SH EDITING
+.SS Entering Edit Mode
+.TP
+.B i
+Enter Edit mode at cursor position
+.TP
+.B A
+Move to end of line and enter Edit mode
+.TP
+.B o
+Insert new line below cursor and enter Edit mode
+.TP
+.B O
+Insert new line above cursor and enter Edit mode
+.SS Deleting Text (Default Mode)
+.TP
+.B dd
+Delete current line
+.TP
+.B Del
+In Edit mode, delete character after cursor
+.TP
+.B Backspace
+In Edit mode, delete character before cursor
+.SS Line-Select Operations
+.TP
+.B V
+Enter Line-Select mode at current line
+.TP
+.BR j ", " k " (in Line-Select)"
+Extend selection down or up
+.TP
+.BR d " (in Line-Select)"
+Delete selected lines
+.TP
+.BR y " (in Line-Select)"
+Yank (copy) selected lines
+.SS Yank and Paste (Default Mode)
+.TP
+.B yy
+Yank (copy) current line
+.TP
+.BR y " (in Line-Select)"
+Yank selected lines
+.TP
+.B p
+Paste yanked text below current line
+.TP
+.B P
+Paste yanked text above current line
+.SS Send Lines
+.TP
+.B ss
+Send current line to external buffer
+.TP
+.BR s " (in Line-Select)"
+Send selected lines to external buffer
+.SS Undo and Redo (Default Mode)
+.TP
+.B u
+Undo last change
+.TP
+.B Ctrl-R
+Redo previously undone change
+.SH SPELL CHECKING
+.B prose
+includes real-time British English spell checking for Markdown (.md, .markdown) and text (.txt) files. Misspelled words are highlighted, and spelling errors can be navigated using
+.B x
+(next error) and
+.B X
+(previous error).
+.PP
+The spell checker:
+.IP \(bu 2
+Uses a comprehensive British English dictionary
+.IP \(bu 2
+Skips short words (1-2 letters)
+.IP \(bu 2
+Ignores all-uppercase words (acronyms like API, HTTP)
+.IP \(bu 2
+Supports contractions (don't, can't, won't)
+.IP \(bu 2
+Accepts British spellings (colour, honour, organise, centre, theatre)
+.SH SEARCHING
+.TP
+.B /
+Enter search mode. The status bar prompts for a search term.
+.TP
+.B Enter
+Execute search. Matching text is highlighted throughout the document.
+.TP
+.B Esc
+Cancel search entry.
+.TP
+.B //
+Clear current search highlights (double tap slash).
+.TP
+.B n
+Jump to next search match.
+.TP
+.B N
+Jump to previous search match.
+.PP
+The search displays a match counter (e.g., "4 matches") in the status bar while active.
+.SH BUFFERS AND TABS
+.B prose
+supports multiple files in tabs. Each file is loaded into a buffer.
+.SS Tab Navigation
+.TP
+.B Tab
+Switch to next tab
+.TP
+.B Shift-Tab
+Switch to previous tab
+.SS Special Buffers
+.TP
+.B S
+Jump to scratch buffer (creates it if it doesn't exist). The scratch buffer is a temporary workspace that persists for the session but is not saved to disk.
+.SH FILE OPERATIONS
+.SS Opening Files
+.TP
+.B Space-O
+Open directory browser. Navigate with arrow keys or
+.BR j / k ,
+press
+.B Enter
+to open file,
+.B b
+to open in new tab, or
+.B Esc
+to cancel.
+.SS Saving and Quitting
+.TP
+.B :w
+Write (save) current file
+.TP
+.B :q
+Quit current buffer/tab
+.TP
+.B :q!
+Force quit without saving
+.TP
+.B :wq
+Write and quit
+.TP
+.B :qa
+Quit all buffers (prompts if unsaved changes)
+.TP
+.B :qa!
+Force quit all without saving
+.TP
+.B :wqa
+Write all modified buffers and quit all
+.TP
+.B :qwa
+Alias for :wqa
+.SS File Management
+.TP
+.BI :rename " newname"
+Rename/move current file to
+.I newname
+.SH MARKDOWN SUPPORT
+.SS Syntax Highlighting
+Markdown files (.md, .markdown) receive syntax highlighting for:
+.IP \(bu 2
+Headers (# ## ###)
+.IP \(bu 2
+Bold and italic text
+.IP \(bu 2
+Code blocks and inline code
+.IP \(bu 2
+Links and images
+.IP \(bu 2
+Lists
+.SS Document Outline
+.TP
+.B Space-H
+Open Markdown document outline (Markdown files only). Shows all headers in a floating overlay. Navigate with arrow keys or
+.BR j / k ,
+press
+.B Enter
+to jump to header, or
+.B Esc
+to cancel.
+.SH KEY BINDINGS SUMMARY
+.SS Leader Key
+.B Space
+is the leader key for special commands:
+.TP
+.B Space-O
+Open directory browser
+.TP
+.B Space-H
+Open document outline (Markdown only)
+.SS Command Mode
+.TP
+.B :
+Enter command mode to issue file operations (w, q, wq, qa, etc.)
+.SS Search Mode
+.TP
+.B /
+Enter search mode
+.SH CONFIGURATION
+.B prose
+currently has no configuration file. All behaviour is built-in.
+.SH FILES
+.TP
+.I ~/.prose/
+Reserved for future configuration and data files (not currently used)
+.SH ENVIRONMENT
+No environment variables are used by
+.BR prose .
+.SH EXAMPLES
+.TP
+.B prose
+Start
+.B prose
+with an empty scratch buffer.
+.TP
+.B prose README.md
+Open README.md for editing.
+.TP
+.B prose *.txt
+Open all .txt files in the current directory, each in its own tab.
+.TP
+.B prose chapter1.md chapter2.md notes.txt
+Open multiple files in tabs.
+.SH WORD DEFINITION
+For word-based navigation (
+.B w
+and
+.B b
+commands),
+.B prose
+uses a Vim-style word definition: sequences of letters, digits, and underscores. This means:
+.IP \(bu 2
+.B hello_world
+is one word
+.IP \(bu 2
+.B hello-world
+is two words (hyphen separates)
+.IP \(bu 2
+.B test123
+is one word
+.SH AUTHOR
+Written by Jack Reid.
+.SH BUGS
+Report bugs at: https://github.com/jackreid/prose/issues
+.SH SEE ALSO
+.BR vim (1),
+.BR nano (1),
+.BR emacs (1)

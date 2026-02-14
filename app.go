@@ -340,6 +340,10 @@ func (a *App) handleDefaultKey(key Key) {
 			a.jumpToNextSpellError()
 		case 'X':
 			a.jumpToPrevSpellError()
+		case 'w':
+			a.jumpToNextWord()
+		case 'b':
+			a.jumpToPrevWord()
 		case 'S':
 			a.jumpToScratch()
 		case 'V':
@@ -1240,6 +1244,58 @@ func (a *App) jumpToPrevSpellError() {
 	lastErr := eb.spellErrors[len(eb.spellErrors)-1]
 	eb.cursorLine = lastErr.Line
 	eb.cursorCol = lastErr.StartCol
+}
+
+// jumpToNextWord moves the cursor to the start of the next word, wrapping around if needed.
+func (a *App) jumpToNextWord() {
+	eb := a.currentBuf()
+
+	// Find all word boundaries in the buffer
+	boundaries := FindWordBoundaries(eb.buf)
+
+	if len(boundaries) == 0 {
+		return
+	}
+
+	// Find the next word after the current cursor position.
+	for _, boundary := range boundaries {
+		if boundary.Line > eb.cursorLine || (boundary.Line == eb.cursorLine && boundary.StartCol > eb.cursorCol) {
+			eb.cursorLine = boundary.Line
+			eb.cursorCol = boundary.StartCol
+			return
+		}
+	}
+
+	// Wrap around to the first word.
+	eb.cursorLine = boundaries[0].Line
+	eb.cursorCol = boundaries[0].StartCol
+}
+
+// jumpToPrevWord moves the cursor to the start of the previous word, wrapping around if needed.
+func (a *App) jumpToPrevWord() {
+	eb := a.currentBuf()
+
+	// Find all word boundaries in the buffer
+	boundaries := FindWordBoundaries(eb.buf)
+
+	if len(boundaries) == 0 {
+		return
+	}
+
+	// Find the previous word before the current cursor position (iterate backwards).
+	for i := len(boundaries) - 1; i >= 0; i-- {
+		boundary := boundaries[i]
+		if boundary.Line < eb.cursorLine || (boundary.Line == eb.cursorLine && boundary.StartCol < eb.cursorCol) {
+			eb.cursorLine = boundary.Line
+			eb.cursorCol = boundary.StartCol
+			return
+		}
+	}
+
+	// Wrap around to the last word.
+	lastBoundary := boundaries[len(boundaries)-1]
+	eb.cursorLine = lastBoundary.Line
+	eb.cursorCol = lastBoundary.StartCol
 }
 
 // activateSearch performs a case-insensitive search for the query and jumps to the first match.
