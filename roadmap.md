@@ -51,3 +51,11 @@
 ## 1.11
 - Comprehensive user help documentation and/or man page.
 - `w` to jump to next word. `b` to jump to previous word.
+
+## 1.12
+- Release tagging fixed
+- Go module path fixed for proper `go install` support
+- Repository maintenance and cleanup
+
+## 1.13
+- Spellcheck is off by default and is toggled with `:spell`
