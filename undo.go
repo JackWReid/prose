@@ -4,22 +4,26 @@ package main
 type OpType int
 
 const (
-	OpInsertChar      OpType = iota // Inserted a character
-	OpDeleteChar                    // Deleted a character
-	OpInsertLine                    // Inserted a newline (split line)
-	OpDeleteLine                    // Deleted a newline (joined lines)
-	OpInsertChars                   // Coalesced group of character inserts
-	OpDeleteWholeLine               // Deleted an entire line (dd)
-	OpInsertWholeLine               // Inserted an entire line (O or paste)
+	OpInsertChar          OpType = iota // Inserted a character
+	OpDeleteChar                        // Deleted a character
+	OpInsertLine                        // Inserted a newline (split line)
+	OpDeleteLine                        // Deleted a newline (joined lines)
+	OpInsertChars                       // Coalesced group of character inserts
+	OpDeleteWholeLine                   // Deleted an entire line (dd)
+	OpInsertWholeLine                   // Inserted an entire line (O or paste)
+	OpDeleteMultipleLines               // Deleted multiple lines (line-select d)
+	OpInsertMultipleLines               // Inserted multiple lines (multi-line paste)
 )
 
 // UndoOp represents a single undoable operation or a coalesced group.
 type UndoOp struct {
-	Type OpType
-	Line int
-	Col  int
-	Char rune   // For single char ops.
-	Text string // For coalesced inserts.
+	Type    OpType
+	Line    int
+	Col     int
+	Char    rune     // For single char ops.
+	Text    string   // For coalesced inserts.
+	Lines   []string // For multi-line operations.
+	EndLine int      // For range operations.
 	// Cursor position to restore after undo.
 	CursorLine int
 	CursorCol  int
@@ -137,6 +141,33 @@ func (u *UndoStack) PushInsertWholeLine(line int) {
 	})
 }
 
+// PushDeleteMultipleLines records a multi-line deletion (line-select d).
+func (u *UndoStack) PushDeleteMultipleLines(startLine, endLine int, lines []string, cursorLine, cursorCol int) {
+	u.clearRedo()
+	u.flushCoalesce()
+	u.ops = append(u.ops, UndoOp{
+		Type:       OpDeleteMultipleLines,
+		Line:       startLine,
+		EndLine:    endLine,
+		Lines:      lines,
+		CursorLine: cursorLine,
+		CursorCol:  cursorCol,
+	})
+}
+
+// PushInsertMultipleLines records a multi-line insertion (multi-line paste).
+func (u *UndoStack) PushInsertMultipleLines(startLine int, lines []string, cursorLine, cursorCol int) {
+	u.clearRedo()
+	u.flushCoalesce()
+	u.ops = append(u.ops, UndoOp{
+		Type:       OpInsertMultipleLines,
+		Line:       startLine,
+		Lines:      lines,
+		CursorLine: cursorLine,
+		CursorCol:  cursorCol,
+	})
+}
+
 // flushCoalesce converts the current coalescing state into an UndoOp.
 func (u *UndoStack) flushCoalesce() {
 	if u.coalesce == nil {
@@ -229,6 +260,36 @@ func (u *UndoStack) Undo(buf *Buffer) (line, col int, ok bool) {
 		// Undo whole line insert: delete the line.
 		buf.DeleteLine(op.Line)
 		return op.CursorLine, op.CursorCol, true
+
+	case OpDeleteMultipleLines:
+		// Undo multi-line delete: re-insert all lines.
+		// Insert lines back at the start position.
+		if len(buf.Lines) == 1 && buf.Lines[0] == "" {
+			// Buffer is empty, replace with deleted lines
+			buf.Lines = make([]string, len(op.Lines))
+			copy(buf.Lines, op.Lines)
+		} else {
+			// Insert lines at op.Line position
+			newLines := make([]string, len(buf.Lines)+len(op.Lines))
+			copy(newLines, buf.Lines[:op.Line])
+			copy(newLines[op.Line:], op.Lines)
+			copy(newLines[op.Line+len(op.Lines):], buf.Lines[op.Line:])
+			buf.Lines = newLines
+		}
+		buf.Dirty = true
+		return op.CursorLine, op.CursorCol, true
+
+	case OpInsertMultipleLines:
+		// Undo multi-line insert: delete all inserted lines.
+		endLine := op.Line + len(op.Lines) - 1
+		if op.Line == 0 && endLine == len(buf.Lines)-1 {
+			// Entire buffer was inserted
+			buf.Lines = []string{""}
+		} else {
+			buf.Lines = append(buf.Lines[:op.Line], buf.Lines[endLine+1:]...)
+		}
+		buf.Dirty = true
+		return op.CursorLine, op.CursorCol, true
 	}
 
 	return 0, 0, false
@@ -292,6 +353,26 @@ func (u *UndoStack) Redo(buf *Buffer) (line, col int, ok bool) {
 		// Redo whole line insert: re-insert empty line.
 		buf.InsertLine(op.Line, "")
 		return op.Line, 0, true
+
+	case OpDeleteMultipleLines:
+		// Redo multi-line delete: delete the lines again.
+		if op.Line == 0 && op.EndLine == len(buf.Lines)-1 {
+			buf.Lines = []string{""}
+		} else {
+			buf.Lines = append(buf.Lines[:op.Line], buf.Lines[op.EndLine+1:]...)
+		}
+		buf.Dirty = true
+		return op.CursorLine, op.CursorCol, true
+
+	case OpInsertMultipleLines:
+		// Redo multi-line insert: re-insert all lines.
+		newLines := make([]string, len(buf.Lines)+len(op.Lines))
+		copy(newLines, buf.Lines[:op.Line])
+		copy(newLines[op.Line:], op.Lines)
+		copy(newLines[op.Line+len(op.Lines):], buf.Lines[op.Line:])
+		buf.Lines = newLines
+		buf.Dirty = true
+		return op.Line + len(op.Lines), 0, true
 	}
 
 	return 0, 0, false

@@ -13,6 +13,7 @@ type Mode int
 const (
 	ModeDefault Mode = iota
 	ModeEdit
+	ModeLineSelect
 )
 
 // App is the top-level editor state.
@@ -30,13 +31,15 @@ type App struct {
 	spellChecker *SpellChecker
 	mode         Mode
 
-	leaderPending bool   // Space was pressed, awaiting second key.
-	dPending      bool   // 'd' was pressed, awaiting second 'd' for dd.
-	gPending      bool   // 'g' was pressed, awaiting second 'g' for gg.
-	yPending      bool   // 'y' was pressed, awaiting second 'y' for yy.
-	yankBuffer    string // Shared yank buffer for yy/dd/p/P operations.
-	quit          bool
-	quitAfterSave bool // Set by :wq on unnamed buffers.
+	leaderPending    bool   // Space was pressed, awaiting second key.
+	dPending         bool   // 'd' was pressed, awaiting second 'd' for dd.
+	gPending         bool   // 'g' was pressed, awaiting second 'g' for gg.
+	yPending         bool   // 'y' was pressed, awaiting second 'y' for yy.
+	sPending         bool   // 's' was pressed, awaiting second 's' for ss.
+	lineSelectAnchor int    // Line where Shift-V was pressed (for line-select mode).
+	yankBuffer       string // Shared yank buffer for yy/dd/p/P operations.
+	quit             bool
+	quitAfterSave    bool // Set by :wq on unnamed buffers.
 }
 
 // currentBuf returns the active EditorBuffer.
@@ -173,6 +176,8 @@ func (a *App) handleInput(event InputEvent) {
 		a.handleDefaultKey(key)
 	case ModeEdit:
 		a.handleEditKey(key)
+	case ModeLineSelect:
+		a.handleLineSelectKey(key)
 	}
 }
 
@@ -197,6 +202,17 @@ func (a *App) handleMouse(mouse MouseEvent) {
 }
 
 func (a *App) handleDefaultKey(key Key) {
+	// ss operator: 's' followed by 's'.
+	if a.sPending {
+		a.sPending = false
+		if key.Type == KeyRune && key.Rune == 's' {
+			a.sendCurrentLineToScratch()
+			return
+		}
+		// Not 'ss' — cancel.
+		return
+	}
+
 	// Leader key sequence: Space followed by a second key.
 	if a.leaderPending {
 		a.leaderPending = false
@@ -281,6 +297,8 @@ func (a *App) handleDefaultKey(key Key) {
 			a.dPending = true
 		case 'y':
 			a.yPending = true
+		case 's':
+			a.sPending = true
 		case 'p':
 			a.pasteBelow()
 		case 'P':
@@ -306,6 +324,15 @@ func (a *App) handleDefaultKey(key Key) {
 			eb.cursorCol = 0
 		case '$':
 			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
+		case 'x':
+			a.jumpToNextSpellError()
+		case 'X':
+			a.jumpToPrevSpellError()
+		case 'S':
+			a.jumpToScratch()
+		case 'V':
+			a.mode = ModeLineSelect
+			a.lineSelectAnchor = eb.cursorLine
 		}
 	case KeyUp, KeyDown, KeyLeft, KeyRight:
 		a.moveCursor(key.Type)
@@ -339,6 +366,7 @@ func (a *App) handleEditKey(key Key) {
 	a.dPending = false
 	a.gPending = false
 	a.yPending = false
+	a.sPending = false
 
 	eb := a.currentBuf()
 	switch key.Type {
@@ -376,6 +404,76 @@ func (a *App) handleEditKey(key Key) {
 		a.redoAction()
 	case KeyCtrlR:
 		a.redoAction()
+	}
+}
+
+func (a *App) handleLineSelectKey(key Key) {
+	eb := a.currentBuf()
+	switch key.Type {
+	case KeyEscape:
+		a.mode = ModeDefault
+	case KeyRune:
+		switch key.Rune {
+		case 'h':
+			a.moveCursor(KeyLeft)
+		case 'j':
+			a.moveCursor(KeyDown)
+		case 'k':
+			a.moveCursor(KeyUp)
+		case 'l':
+			a.moveCursor(KeyRight)
+		case 'y':
+			a.yankSelectedLines()
+			a.mode = ModeDefault
+		case 'd':
+			a.deleteSelectedLines()
+			a.mode = ModeDefault
+		case 's':
+			a.sendSelectedLinesToScratch()
+			a.mode = ModeDefault
+		case 'g':
+			a.gPending = true
+		case 'G':
+			a.jumpToBottom()
+		case '^':
+			// Jump to first non-whitespace character.
+			runes := []rune(eb.buf.Lines[eb.cursorLine])
+			for i, r := range runes {
+				if r != ' ' && r != '\t' {
+					eb.cursorCol = i
+					return
+				}
+			}
+			eb.cursorCol = 0
+		case '$':
+			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
+		}
+	case KeyUp, KeyDown, KeyLeft, KeyRight:
+		a.moveCursor(key.Type)
+	case KeyHome:
+		eb.cursorCol = 0
+	case KeyEnd:
+		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
+	case KeyCtrlD:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollDown(visibleLines / 2)
+	case KeyCtrlU:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollUp(visibleLines / 2)
+	case KeyPgDn:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollDown(visibleLines)
+	case KeyPgUp:
+		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
+		a.scrollUp(visibleLines)
+	}
+
+	// Handle gg operator
+	if a.gPending {
+		a.gPending = false
+		if key.Type == KeyRune && key.Rune == 'g' {
+			a.jumpToTop()
+		}
 	}
 }
 
@@ -605,17 +703,27 @@ func (a *App) executeCommand(cmd string) {
 		a.closeCurrentBuffer()
 
 	case cmd == "w":
-		a.save()
+		if eb.isScratch {
+			a.statusBar.SetMessage("Cannot save scratch buffer")
+		} else {
+			a.save()
+		}
 
 	case strings.HasPrefix(cmd, "w "):
-		filename := strings.TrimSpace(cmd[2:])
-		if filename != "" {
-			eb.buf.Save(filename)
-			eb.highlighter = DetectHighlighter(eb.buf.Filename)
+		if eb.isScratch {
+			a.statusBar.SetMessage("Cannot save scratch buffer")
+		} else {
+			filename := strings.TrimSpace(cmd[2:])
+			if filename != "" {
+				eb.buf.Save(filename)
+				eb.highlighter = DetectHighlighter(eb.buf.Filename)
+			}
 		}
 
 	case cmd == "wq":
-		if eb.buf.Filename == "" {
+		if eb.isScratch {
+			a.statusBar.SetMessage("Cannot save scratch buffer")
+		} else if eb.buf.Filename == "" {
 			a.quitAfterSave = true
 			a.statusBar.StartPrompt(PromptSaveNew)
 		} else {
@@ -860,10 +968,33 @@ func (a *App) pasteBelow() {
 		return
 	}
 	eb := a.currentBuf()
-	eb.buf.InsertLine(eb.cursorLine+1, a.yankBuffer)
-	eb.undo.PushInsertWholeLine(eb.cursorLine + 1)
-	eb.cursorLine++
-	eb.cursorCol = 0
+
+	// Check if yankBuffer contains multiple lines
+	if strings.Contains(a.yankBuffer, "\n") {
+		lines := strings.Split(a.yankBuffer, "\n")
+		insertPos := eb.cursorLine + 1
+
+		// Push undo operation for multi-line insert
+		eb.undo.PushInsertMultipleLines(insertPos, lines, eb.cursorLine, eb.cursorCol)
+
+		// Insert all lines at once
+		newLines := make([]string, len(eb.buf.Lines)+len(lines))
+		copy(newLines, eb.buf.Lines[:insertPos])
+		copy(newLines[insertPos:], lines)
+		copy(newLines[insertPos+len(lines):], eb.buf.Lines[insertPos:])
+		eb.buf.Lines = newLines
+		eb.buf.Dirty = true
+
+		eb.cursorLine = insertPos
+		eb.cursorCol = 0
+	} else {
+		// Single line paste
+		eb.buf.InsertLine(eb.cursorLine+1, a.yankBuffer)
+		eb.undo.PushInsertWholeLine(eb.cursorLine + 1)
+		eb.cursorLine++
+		eb.cursorCol = 0
+	}
+
 	eb.ScheduleSpellCheck()
 }
 
@@ -872,9 +1003,32 @@ func (a *App) pasteAbove() {
 		return
 	}
 	eb := a.currentBuf()
-	eb.buf.InsertLine(eb.cursorLine, a.yankBuffer)
-	eb.undo.PushInsertWholeLine(eb.cursorLine)
-	eb.cursorCol = 0
+
+	// Check if yankBuffer contains multiple lines
+	if strings.Contains(a.yankBuffer, "\n") {
+		lines := strings.Split(a.yankBuffer, "\n")
+		insertPos := eb.cursorLine
+
+		// Push undo operation for multi-line insert
+		eb.undo.PushInsertMultipleLines(insertPos, lines, eb.cursorLine, eb.cursorCol)
+
+		// Insert all lines at once
+		newLines := make([]string, len(eb.buf.Lines)+len(lines))
+		copy(newLines, eb.buf.Lines[:insertPos])
+		copy(newLines[insertPos:], lines)
+		copy(newLines[insertPos+len(lines):], eb.buf.Lines[insertPos:])
+		eb.buf.Lines = newLines
+		eb.buf.Dirty = true
+
+		eb.cursorLine = insertPos
+		eb.cursorCol = 0
+	} else {
+		// Single line paste
+		eb.buf.InsertLine(eb.cursorLine, a.yankBuffer)
+		eb.undo.PushInsertWholeLine(eb.cursorLine)
+		eb.cursorCol = 0
+	}
+
 	eb.ScheduleSpellCheck()
 }
 
@@ -1017,6 +1171,156 @@ func (a *App) mouseToBufferPos(termRow, termCol int) (int, int) {
 	return bufferLine, bufferCol
 }
 
+// jumpToNextSpellError moves the cursor to the next spelling error, wrapping around if needed.
+func (a *App) jumpToNextSpellError() {
+	eb := a.currentBuf()
+	if len(eb.spellErrors) == 0 {
+		a.statusBar.SetMessage("No spelling errors")
+		return
+	}
+
+	// Find the next error after the current cursor position.
+	for _, err := range eb.spellErrors {
+		if err.Line > eb.cursorLine || (err.Line == eb.cursorLine && err.StartCol > eb.cursorCol) {
+			eb.cursorLine = err.Line
+			eb.cursorCol = err.StartCol
+			return
+		}
+	}
+
+	// Wrap around to the first error.
+	eb.cursorLine = eb.spellErrors[0].Line
+	eb.cursorCol = eb.spellErrors[0].StartCol
+}
+
+// jumpToPrevSpellError moves the cursor to the previous spelling error, wrapping around if needed.
+func (a *App) jumpToPrevSpellError() {
+	eb := a.currentBuf()
+	if len(eb.spellErrors) == 0 {
+		a.statusBar.SetMessage("No spelling errors")
+		return
+	}
+
+	// Find the previous error before the current cursor position (iterate backwards).
+	for i := len(eb.spellErrors) - 1; i >= 0; i-- {
+		err := eb.spellErrors[i]
+		if err.Line < eb.cursorLine || (err.Line == eb.cursorLine && err.StartCol < eb.cursorCol) {
+			eb.cursorLine = err.Line
+			eb.cursorCol = err.StartCol
+			return
+		}
+	}
+
+	// Wrap around to the last error.
+	lastErr := eb.spellErrors[len(eb.spellErrors)-1]
+	eb.cursorLine = lastErr.Line
+	eb.cursorCol = lastErr.StartCol
+}
+
+// ensureScratchBuffer ensures the scratch buffer exists and returns its index.
+func (a *App) ensureScratchBuffer() int {
+	// Check if scratch buffer already exists.
+	for i, eb := range a.buffers {
+		if eb.isScratch {
+			return i
+		}
+	}
+
+	// Create new scratch buffer.
+	scratch := NewEditorBuffer("")
+	scratch.isScratch = true
+	scratch.buf.Lines = []string{""} // Start with one empty line
+	a.buffers = append(a.buffers, scratch)
+	return len(a.buffers) - 1
+}
+
+// jumpToScratch switches to the scratch buffer, creating it if needed.
+func (a *App) jumpToScratch() {
+	idx := a.ensureScratchBuffer()
+	a.currentBuffer = idx
+}
+
+// sendCurrentLineToScratch sends the current line to the scratch buffer.
+func (a *App) sendCurrentLineToScratch() {
+	eb := a.currentBuf()
+	line := eb.buf.Lines[eb.cursorLine]
+	a.appendToScratch(line)
+	a.statusBar.SetMessage("Sent line to scratch")
+}
+
+// appendToScratch appends content to the scratch buffer with newline separators.
+func (a *App) appendToScratch(content string) {
+	idx := a.ensureScratchBuffer()
+	scratch := a.buffers[idx]
+
+	if len(scratch.buf.Lines) == 1 && scratch.buf.Lines[0] == "" {
+		// First entry - no separator, just replace empty line
+		scratch.buf.Lines[0] = content
+	} else {
+		// Append with newline separator
+		scratch.buf.Lines = append(scratch.buf.Lines, content)
+	}
+}
+
+// getSelectionRange returns the start and end line of the current selection, ensuring start <= end.
+func (a *App) getSelectionRange() (int, int) {
+	start := a.lineSelectAnchor
+	end := a.currentBuf().cursorLine
+	if start > end {
+		start, end = end, start
+	}
+	return start, end
+}
+
+// yankSelectedLines yanks the selected lines to the yank buffer.
+func (a *App) yankSelectedLines() {
+	eb := a.currentBuf()
+	start, end := a.getSelectionRange()
+	lines := eb.buf.Lines[start : end+1]
+	a.yankBuffer = strings.Join(lines, "\n")
+	a.statusBar.SetMessage(fmt.Sprintf("Yanked %d line(s)", end-start+1))
+}
+
+// deleteSelectedLines deletes the selected lines and cuts them to the yank buffer.
+func (a *App) deleteSelectedLines() {
+	eb := a.currentBuf()
+	start, end := a.getSelectionRange()
+	lines := make([]string, end-start+1)
+	copy(lines, eb.buf.Lines[start:end+1])
+	a.yankBuffer = strings.Join(lines, "\n") // Cut semantics
+
+	// Push undo operation before modifying buffer
+	eb.undo.PushDeleteMultipleLines(start, end, lines, eb.cursorLine, eb.cursorCol)
+
+	// Check if deleting entire buffer
+	if start == 0 && end == len(eb.buf.Lines)-1 {
+		eb.buf.Lines = []string{""} // Deleting entire buffer leaves one empty line
+	} else {
+		eb.buf.Lines = append(eb.buf.Lines[:start], eb.buf.Lines[end+1:]...)
+	}
+
+	eb.buf.Dirty = true
+	eb.cursorLine = start
+	if eb.cursorLine >= len(eb.buf.Lines) {
+		eb.cursorLine = len(eb.buf.Lines) - 1
+	}
+	eb.cursorCol = 0
+	eb.ScheduleSpellCheck()
+
+	a.statusBar.SetMessage(fmt.Sprintf("Deleted %d line(s)", end-start+1))
+}
+
+// sendSelectedLinesToScratch sends the selected lines to the scratch buffer.
+func (a *App) sendSelectedLinesToScratch() {
+	eb := a.currentBuf()
+	start, end := a.getSelectionRange()
+	lines := eb.buf.Lines[start : end+1]
+	content := strings.Join(lines, "\n")
+
+	a.appendToScratch(content)
+	a.statusBar.SetMessage(fmt.Sprintf("Sent %d line(s) to scratch", end-start+1))
+}
+
 func (a *App) render() {
 	eb := a.currentBuf()
 	displayLines := WrapBuffer(eb.buf, a.viewport.ColWidth)
@@ -1029,10 +1333,16 @@ func (a *App) render() {
 		bufferInfo = formatBufferInfo(a.currentBuffer+1, len(a.buffers))
 	}
 
-	statusLeft := a.statusBar.FormatLeft(eb.Filename(), eb.IsDirty(), bufferInfo, eb.SpellErrorCount())
+	statusLeft := a.statusBar.FormatLeft(eb.Filename(), eb.IsDirty(), bufferInfo, eb.SpellErrorCount(), eb.isScratch)
 	statusRight := a.statusBar.FormatRight(a.mode, eb.WordCount(), eb.SpellErrorCount())
 
-	frame := a.renderer.RenderFrame(displayLines, a.viewport, eb.scrollOffset, cursorDL, cursorDC, statusLeft, statusRight, eb.highlighter, eb.spellErrors)
+	// Get selection range for line-select mode
+	selectionStart, selectionEnd := -1, -1
+	if a.mode == ModeLineSelect {
+		selectionStart, selectionEnd = a.getSelectionRange()
+	}
+
+	frame := a.renderer.RenderFrame(displayLines, a.viewport, eb.scrollOffset, cursorDL, cursorDC, statusLeft, statusRight, eb.highlighter, eb.spellErrors, a.mode, selectionStart, selectionEnd)
 
 	// Render picker overlay if active.
 	if a.picker.Active {

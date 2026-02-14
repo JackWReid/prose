@@ -28,7 +28,7 @@ func NewStatusBar() *StatusBar {
 // FormatLeft returns the left-aligned portion of the status bar.
 // bufferInfo is an optional "[2/3]" indicator when multiple buffers are open.
 // spellErrorCount is the number of spelling errors in the buffer.
-func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string, spellErrorCount int) string {
+func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string, spellErrorCount int, isScratch bool) string {
 	if s.Prompt == PromptSaveNew {
 		return fmt.Sprintf(" Save as: %s", s.PromptText)
 	}
@@ -40,7 +40,7 @@ func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string, s
 		return " " + s.StatusMessage
 	}
 
-	name := truncatePath(filename)
+	name := truncatePathScratch(filename, isScratch)
 
 	// Colour dirty filenames bold + darker orange via ANSI codes.
 	// In reverse video mode, use background code to set text color.
@@ -73,6 +73,8 @@ func (s *StatusBar) FormatRight(mode Mode, wordCount int, spellErrorCount int) s
 		modeStr = "DEFAULT"
 	case ModeEdit:
 		modeStr = "EDIT"
+	case ModeLineSelect:
+		modeStr = "LINE-SELECT"
 	}
 
 	// Show error count if there are spelling errors
@@ -117,6 +119,14 @@ func truncatePath(filename string) string {
 		return base
 	}
 	return dir + "/" + base
+}
+
+// truncatePathScratch is like truncatePath but handles scratch buffers.
+func truncatePathScratch(filename string, isScratch bool) string {
+	if isScratch {
+		return "[scratch]"
+	}
+	return truncatePath(filename)
 }
 
 // HandlePromptKey processes a keypress during an active prompt.

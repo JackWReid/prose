@@ -14,6 +14,7 @@ type EditorBuffer struct {
 	cursorLine   int
 	cursorCol    int
 	scrollOffset int
+	isScratch    bool // True if this is the session scratch buffer
 
 	// Spell checking state
 	spellErrors       []SpellError  // Cached spell errors
@@ -36,7 +37,11 @@ func (eb *EditorBuffer) Filename() string {
 }
 
 // IsDirty returns whether the buffer has unsaved changes.
+// Scratch buffers are never considered dirty (they're not saved).
 func (eb *EditorBuffer) IsDirty() bool {
+	if eb.isScratch {
+		return false
+	}
 	return eb.buf.Dirty
 }
 

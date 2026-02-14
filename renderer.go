@@ -26,6 +26,9 @@ func (r *Renderer) RenderFrame(
 	statusRight string,
 	highlighter Highlighter,
 	spellErrors []SpellError,
+	mode Mode,
+	selectionStart int,
+	selectionEnd int,
 ) string {
 	r.buf.Reset()
 
@@ -55,6 +58,15 @@ func (r *Renderer) RenderFrame(
 			text = highlighter.Highlight(text)
 			text = r.applySpellHighlighting(text, displayLines[idx], spellErrors)
 			text = TruncateVisible(text, vp.ColWidth)
+
+			// Apply reverse video for line-select mode
+			if mode == ModeLineSelect {
+				bufLine := displayLines[idx].BufferLine
+				if bufLine >= selectionStart && bufLine <= selectionEnd {
+					text = "\x1b[7m" + text + "\x1b[0m"
+				}
+			}
+
 			r.buf.WriteString(marginStr)
 			r.buf.WriteString(text)
 		}
@@ -79,7 +91,7 @@ func (r *Renderer) RenderPicker(buffers []*EditorBuffer, picker *Picker, current
 	// Build items for overlay.
 	items := make([]OverlayItem, len(buffers))
 	for i, eb := range buffers {
-		name := pickerDisplayName(eb.Filename())
+		name := pickerDisplayName(eb.Filename(), eb.isScratch)
 		displayName := name
 		// Colour dirty filenames yellow/bold.
 		if eb.IsDirty() {
@@ -101,7 +113,10 @@ func (r *Renderer) RenderPicker(buffers []*EditorBuffer, picker *Picker, current
 	)
 }
 
-func pickerDisplayName(filename string) string {
+func pickerDisplayName(filename string, isScratch bool) string {
+	if isScratch {
+		return "[scratch]"
+	}
 	if filename == "" {
 		return "[unnamed]"
 	}
