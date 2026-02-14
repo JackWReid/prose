@@ -165,3 +165,137 @@ func TestParseKeyCSI4Byte(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMouseEvent(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     []byte
+		wantOK    bool
+		wantBtn   MouseButton
+		wantRow   int
+		wantCol   int
+		wantPress bool
+	}{
+		{
+			name:      "left button press",
+			input:     []byte("\x1b[<0;10;5M"),
+			wantOK:    true,
+			wantBtn:   MouseLeft,
+			wantRow:   5,
+			wantCol:   10,
+			wantPress: true,
+		},
+		{
+			name:      "left button release",
+			input:     []byte("\x1b[<0;10;5m"),
+			wantOK:    true,
+			wantBtn:   MouseLeft,
+			wantRow:   5,
+			wantCol:   10,
+			wantPress: false,
+		},
+		{
+			name:      "middle button press",
+			input:     []byte("\x1b[<1;20;15M"),
+			wantOK:    true,
+			wantBtn:   MouseMiddle,
+			wantRow:   15,
+			wantCol:   20,
+			wantPress: true,
+		},
+		{
+			name:      "right button press",
+			input:     []byte("\x1b[<2;30;25M"),
+			wantOK:    true,
+			wantBtn:   MouseRight,
+			wantRow:   25,
+			wantCol:   30,
+			wantPress: true,
+		},
+		{
+			name:   "invalid sequence - too short",
+			input:  []byte("\x1b[<0;1M"),
+			wantOK: false,
+		},
+		{
+			name:   "invalid sequence - no ESC",
+			input:  []byte("[<0;10;5M"),
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mouse, ok := parseMouseEvent(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("parseMouseEvent() ok = %v, want %v", ok, tt.wantOK)
+				return
+			}
+			if !tt.wantOK {
+				return
+			}
+			if mouse.Button != tt.wantBtn {
+				t.Errorf("Button = %v, want %v", mouse.Button, tt.wantBtn)
+			}
+			if mouse.Row != tt.wantRow {
+				t.Errorf("Row = %v, want %v", mouse.Row, tt.wantRow)
+			}
+			if mouse.Col != tt.wantCol {
+				t.Errorf("Col = %v, want %v", mouse.Col, tt.wantCol)
+			}
+			if mouse.Press != tt.wantPress {
+				t.Errorf("Press = %v, want %v", mouse.Press, tt.wantPress)
+			}
+		})
+	}
+}
+
+func TestParseInput(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     []byte
+		wantType  int
+		wantKey   int
+		wantMouse bool
+	}{
+		{
+			name:     "regular key",
+			input:    []byte("a"),
+			wantType: EventKey,
+			wantKey:  KeyRune,
+		},
+		{
+			name:     "escape key",
+			input:    []byte{27},
+			wantType: EventKey,
+			wantKey:  KeyEscape,
+		},
+		{
+			name:      "mouse event",
+			input:     []byte("\x1b[<0;10;5M"),
+			wantType:  EventMouse,
+			wantMouse: true,
+		},
+		{
+			name:     "arrow up",
+			input:    []byte("\x1b[A"),
+			wantType: EventKey,
+			wantKey:  KeyUp,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := parseInput(tt.input)
+			if event.Type != tt.wantType {
+				t.Errorf("Type = %v, want %v", event.Type, tt.wantType)
+			}
+			if tt.wantType == EventKey && event.Key.Type != tt.wantKey {
+				t.Errorf("Key.Type = %v, want %v", event.Key.Type, tt.wantKey)
+			}
+			if tt.wantMouse && event.Mouse.Button == MouseUnknown {
+				t.Error("Expected valid mouse event")
+			}
+		})
+	}
+}

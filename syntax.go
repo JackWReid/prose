@@ -141,3 +141,37 @@ func TruncateVisible(s string, maxVisible int) string {
 func isAnsiTerminator(r rune) bool {
 	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
 }
+
+// OutlineItem represents a heading in a markdown document.
+type OutlineItem struct {
+	Level      int    // 1-6 for h1-h6
+	Text       string // Heading text without # symbols
+	BufferLine int    // Line number in buffer (0-based)
+}
+
+// IsMarkdownFile checks if a filename has a markdown extension.
+func IsMarkdownFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	return ext == ".md" || ext == ".markdown" || ext == ".mdx"
+}
+
+// ExtractHeadings extracts all ATX-style headings from a buffer.
+func ExtractHeadings(buf *Buffer) []OutlineItem {
+	var items []OutlineItem
+	reHeadingATX := regexp.MustCompile(`^(#{1,6})\s+(.+)$`)
+
+	for i, line := range buf.Lines {
+		matches := reHeadingATX.FindStringSubmatch(line)
+		if matches != nil {
+			level := len(matches[1])
+			text := strings.TrimSpace(matches[2])
+			items = append(items, OutlineItem{
+				Level:      level,
+				Text:       text,
+				BufferLine: i,
+			})
+		}
+	}
+
+	return items
+}

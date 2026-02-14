@@ -194,3 +194,105 @@ func TestTruncateVisibleANSIOnly(t *testing.T) {
 		t.Errorf("TruncateVisible ANSI-only = %q, want %q", got, input)
 	}
 }
+
+// --- Outline tests ---
+
+func TestIsMarkdownFile(t *testing.T) {
+	tests := []struct {
+		filename string
+		want     bool
+	}{
+		{"test.md", true},
+		{"README.markdown", true},
+		{"doc.mdx", true},
+		{"TEST.MD", true},
+		{"file.txt", false},
+		{"code.go", false},
+		{"", false},
+		{"noext", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			if got := IsMarkdownFile(tt.filename); got != tt.want {
+				t.Errorf("IsMarkdownFile(%q) = %v, want %v", tt.filename, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractHeadings(t *testing.T) {
+	buf := &Buffer{
+		Lines: []string{
+			"# Heading 1",
+			"Some text",
+			"## Heading 2",
+			"More text",
+			"### Heading 3",
+			"",
+			"#### Heading 4",
+			"Not a heading",
+			"#NoSpace",
+			"##### Heading 5",
+		},
+	}
+
+	items := ExtractHeadings(buf)
+
+	expected := []OutlineItem{
+		{Level: 1, Text: "Heading 1", BufferLine: 0},
+		{Level: 2, Text: "Heading 2", BufferLine: 2},
+		{Level: 3, Text: "Heading 3", BufferLine: 4},
+		{Level: 4, Text: "Heading 4", BufferLine: 6},
+		{Level: 5, Text: "Heading 5", BufferLine: 9},
+	}
+
+	if len(items) != len(expected) {
+		t.Fatalf("ExtractHeadings() returned %d items, want %d", len(items), len(expected))
+	}
+
+	for i, want := range expected {
+		got := items[i]
+		if got.Level != want.Level {
+			t.Errorf("Item %d: Level = %d, want %d", i, got.Level, want.Level)
+		}
+		if got.Text != want.Text {
+			t.Errorf("Item %d: Text = %q, want %q", i, got.Text, want.Text)
+		}
+		if got.BufferLine != want.BufferLine {
+			t.Errorf("Item %d: BufferLine = %d, want %d", i, got.BufferLine, want.BufferLine)
+		}
+	}
+}
+
+func TestExtractHeadingsEmpty(t *testing.T) {
+	buf := &Buffer{
+		Lines: []string{"No headings here", "Just text"},
+	}
+
+	items := ExtractHeadings(buf)
+	if len(items) != 0 {
+		t.Errorf("ExtractHeadings() with no headings returned %d items, want 0", len(items))
+	}
+}
+
+func TestExtractHeadingsWithTrailingSpaces(t *testing.T) {
+	buf := &Buffer{
+		Lines: []string{
+			"# Heading with trailing spaces   ",
+			"## Another heading  ",
+		},
+	}
+
+	items := ExtractHeadings(buf)
+	if len(items) != 2 {
+		t.Fatalf("ExtractHeadings() returned %d items, want 2", len(items))
+	}
+
+	if items[0].Text != "Heading with trailing spaces" {
+		t.Errorf("Item 0: Text = %q, want %q", items[0].Text, "Heading with trailing spaces")
+	}
+	if items[1].Text != "Another heading" {
+		t.Errorf("Item 1: Text = %q, want %q", items[1].Text, "Another heading")
+	}
+}

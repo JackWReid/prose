@@ -147,6 +147,109 @@ func pickerDisplayName(filename string) string {
 	return filepath.Base(filename)
 }
 
+// RenderOutline renders the document outline overlay centred on screen.
+func (r *Renderer) RenderOutline(outline *Outline, vp *Viewport) string {
+	var b strings.Builder
+
+	// Hide cursor while outline is shown.
+	b.WriteString("\x1b[?25l")
+
+	// Max visible items (use ~20 or calculate from viewport).
+	maxVisible := 20
+	if vp.Height-6 < maxVisible {
+		maxVisible = vp.Height - 6
+	}
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+
+	visibleItems := outline.VisibleItems(maxVisible)
+	if len(visibleItems) == 0 {
+		return b.String()
+	}
+
+	// Calculate box dimensions.
+	maxTextLen := 0
+	for _, item := range visibleItems {
+		indent := (item.Level - 1) * 2
+		displayLen := indent + len(item.Text)
+		if displayLen > maxTextLen {
+			maxTextLen = displayLen
+		}
+	}
+
+	// Box width: "  > " (4) + text + "  " (2) padding + border (2)
+	innerWidth := maxTextLen + 6
+	title := " Document Outline "
+	if innerWidth < len(title)+2 {
+		innerWidth = len(title) + 2
+	}
+	boxWidth := innerWidth + 2 // +2 for left/right borders
+	boxHeight := len(visibleItems) + 2 // +2 for top/bottom borders
+
+	// Centre the box.
+	startCol := (vp.Width - boxWidth) / 2
+	if startCol < 0 {
+		startCol = 0
+	}
+	startRow := (vp.Height - boxHeight) / 2
+	if startRow < 1 {
+		startRow = 1
+	}
+
+	// Top border.
+	topLine := "┌" + title + strings.Repeat("─", innerWidth-len(title)) + "┐"
+	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow, startCol+1, topLine))
+
+	// Item rows.
+	for i, item := range visibleItems {
+		row := startRow + 1 + i
+		actualIdx := outline.ScrollOffset + i
+		prefix := "    "
+		if actualIdx == outline.Selected {
+			prefix = "  > "
+		}
+
+		// Indent based on heading level.
+		indent := strings.Repeat(" ", (item.Level-1)*2)
+		displayText := indent + item.Text
+
+		// Calculate padding to fill inner width.
+		padding := innerWidth - 4 - len(displayText)
+		if padding < 0 {
+			// Truncate if too long.
+			maxLen := innerWidth - 4
+			if maxLen > 0 && len(displayText) > maxLen {
+				displayText = displayText[:maxLen]
+			}
+			padding = 0
+		}
+
+		line := "│" + prefix + displayText + strings.Repeat(" ", padding) + "  │"
+		b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m%s\x1b[0m", row, startCol+1, line))
+	}
+
+	// Bottom border.
+	bottomLine := "└" + strings.Repeat("─", innerWidth) + "┘"
+	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow+boxHeight-1, startCol+1, bottomLine))
+
+	// Scroll indicators.
+	if outline.ScrollOffset > 0 {
+		// Show "↑" indicator at top.
+		indicatorRow := startRow + 1
+		indicatorCol := startCol + boxWidth - 2
+		b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m↑\x1b[0m", indicatorRow, indicatorCol))
+	}
+	if outline.ScrollOffset+len(visibleItems) < len(outline.Items) {
+		// Show "↓" indicator at bottom.
+		indicatorRow := startRow + boxHeight - 2
+		indicatorCol := startCol + boxWidth - 2
+		b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m↓\x1b[0m", indicatorRow, indicatorCol))
+	}
+
+	return b.String()
+}
+
 func (r *Renderer) renderStatusBar(vp *Viewport, left, right string) {
 	row := vp.Height
 	r.buf.WriteString(fmt.Sprintf("\x1b[%d;1H", row))

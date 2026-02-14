@@ -29,11 +29,13 @@
 - <Space>-H to open the document outline floating window (.md only)
 
 ## 1.7
-- <Space>-O Current directory file browsing support with floating file picker
+- `qa`, `!qa`, and `wqa/qwa` support
+- Improved floating overlay UI visuals
+- <Space>-O Current directory file browsing support with floating file picker, open file with enter, open in new tab/buffer with b
 
 ## 1.8
 - English language spellcheck based on some system dictionary
 
-# 1.9
+## 1.9
 - Enter line-select mode with <Shift-V>, y and d then act on whole lines
 - App-level scratch buffer. Send selections with s for lines in line-select mode and ss for a single line in Default mode.

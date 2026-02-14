@@ -32,6 +32,10 @@ func NewTerminal() (*Terminal, error) {
 	// Hide cursor during setup.
 	os.Stdout.WriteString("\x1b[?25l")
 
+	// Enable SGR mouse protocol: button events + extended coordinates.
+	os.Stdout.WriteString("\x1b[?1000h") // Button events
+	os.Stdout.WriteString("\x1b[?1006h") // SGR extended mode
+
 	// Query size.
 	t.width, t.height, err = term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
@@ -65,6 +69,9 @@ func (t *Terminal) SigwinchChan() <-chan os.Signal {
 
 // Restore returns the terminal to its original state.
 func (t *Terminal) Restore() {
+	// Disable mouse protocols.
+	os.Stdout.WriteString("\x1b[?1006l") // SGR extended mode
+	os.Stdout.WriteString("\x1b[?1000l") // Button events
 	// Show cursor.
 	os.Stdout.WriteString("\x1b[?25h")
 	// Leave alternate screen buffer.
@@ -75,15 +82,15 @@ func (t *Terminal) Restore() {
 	signal.Stop(t.sigwinch)
 }
 
-// ReadKey reads a single keypress from stdin in raw mode.
-// Returns a Key struct describing the input.
-func (t *Terminal) ReadKey() (Key, error) {
-	buf := make([]byte, 6)
+// ReadKey reads a single input event from stdin in raw mode.
+// Returns an InputEvent which may contain a Key or MouseEvent.
+func (t *Terminal) ReadKey() (InputEvent, error) {
+	buf := make([]byte, 32) // Larger buffer for SGR mouse sequences
 	n, err := os.Stdin.Read(buf)
 	if err != nil {
-		return Key{}, err
+		return InputEvent{}, err
 	}
-	return parseKey(buf[:n]), nil
+	return parseInput(buf[:n]), nil
 }
 
 // Key types.
@@ -112,6 +119,57 @@ const (
 type Key struct {
 	Type int
 	Rune rune
+}
+
+// Event types.
+const (
+	EventKey = iota
+	EventMouse
+)
+
+// MouseButton types.
+type MouseButton int
+
+const (
+	MouseLeft MouseButton = iota
+	MouseMiddle
+	MouseRight
+	MouseWheelUp
+	MouseWheelDown
+	MouseUnknown
+)
+
+// MouseEvent represents a mouse input event.
+type MouseEvent struct {
+	Button MouseButton
+	Row    int  // 1-based terminal row
+	Col    int  // 1-based terminal column
+	Press  bool // true for press, false for release
+}
+
+// InputEvent wraps either a key or mouse event.
+type InputEvent struct {
+	Type  int // EventKey or EventMouse
+	Key   Key
+	Mouse MouseEvent
+}
+
+// parseInput determines whether the input is a key or mouse event.
+func parseInput(buf []byte) InputEvent {
+	if len(buf) == 0 {
+		return InputEvent{Type: EventKey, Key: Key{Type: KeyUnknown}}
+	}
+
+	// Check for SGR mouse sequence: ESC [ < ...
+	if len(buf) >= 6 && buf[0] == 27 && buf[1] == '[' && buf[2] == '<' {
+		mouse, ok := parseMouseEvent(buf)
+		if ok {
+			return InputEvent{Type: EventMouse, Mouse: mouse}
+		}
+	}
+
+	// Otherwise parse as a key.
+	return InputEvent{Type: EventKey, Key: parseKey(buf)}
 }
 
 func parseKey(buf []byte) Key {
@@ -188,6 +246,96 @@ func parseKey(buf []byte) Key {
 	}
 
 	return Key{Type: KeyUnknown}
+}
+
+// parseMouseEvent parses an SGR mouse sequence: ESC [ < Cb ; Cx ; Cy M|m
+// Returns the MouseEvent and true if parsing succeeded.
+func parseMouseEvent(buf []byte) (MouseEvent, bool) {
+	// Format: ESC [ < button ; col ; row M (press) or m (release)
+	// Minimum length: ESC[<0;1;1M = 9 bytes
+	if len(buf) < 9 {
+		return MouseEvent{}, false
+	}
+
+	// Verify the sequence starts with ESC [ <
+	if buf[0] != 27 || buf[1] != '[' || buf[2] != '<' {
+		return MouseEvent{}, false
+	}
+
+	// Find the semicolons and terminator.
+	i := 3 // Start after ESC[<
+	button := 0
+	col := 0
+	row := 0
+	press := false
+
+	// Parse button.
+	for i < len(buf) && buf[i] >= '0' && buf[i] <= '9' {
+		button = button*10 + int(buf[i]-'0')
+		i++
+	}
+	if i >= len(buf) || buf[i] != ';' {
+		return MouseEvent{}, false
+	}
+	i++ // Skip semicolon
+
+	// Parse column.
+	for i < len(buf) && buf[i] >= '0' && buf[i] <= '9' {
+		col = col*10 + int(buf[i]-'0')
+		i++
+	}
+	if i >= len(buf) || buf[i] != ';' {
+		return MouseEvent{}, false
+	}
+	i++ // Skip semicolon
+
+	// Parse row.
+	for i < len(buf) && buf[i] >= '0' && buf[i] <= '9' {
+		row = row*10 + int(buf[i]-'0')
+		i++
+	}
+	if i >= len(buf) {
+		return MouseEvent{}, false
+	}
+
+	// Check terminator: M for press, m for release.
+	switch buf[i] {
+	case 'M':
+		press = true
+	case 'm':
+		press = false
+	default:
+		return MouseEvent{}, false
+	}
+
+	// Map button codes to MouseButton type.
+	var btn MouseButton
+	switch button & 0x03 { // Lower 2 bits indicate button
+	case 0:
+		btn = MouseLeft
+	case 1:
+		btn = MouseMiddle
+	case 2:
+		btn = MouseRight
+	default:
+		btn = MouseUnknown
+	}
+
+	// Check for scroll wheel (button codes 64+).
+	if button >= 64 {
+		if button == 64 {
+			btn = MouseWheelUp
+		} else if button == 65 {
+			btn = MouseWheelDown
+		}
+	}
+
+	return MouseEvent{
+		Button: btn,
+		Row:    row,
+		Col:    col,
+		Press:  press,
+	}, true
 }
 
 func decodeUTF8(buf []byte) rune {

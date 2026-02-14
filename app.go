@@ -25,6 +25,7 @@ type App struct {
 	statusBar *StatusBar
 	terminal  *Terminal
 	picker    *Picker
+	outline   *Outline
 	mode      Mode
 
 	leaderPending bool   // Space was pressed, awaiting second key.
@@ -46,6 +47,7 @@ func NewApp(filenames []string) *App {
 		renderer:  NewRenderer(),
 		statusBar: NewStatusBar(),
 		picker:    &Picker{},
+		outline:   &Outline{},
 		mode:      ModeDefault,
 	}
 	if len(filenames) == 0 {
@@ -91,12 +93,12 @@ func (a *App) Run() error {
 		default:
 		}
 
-		key, err := t.ReadKey()
+		event, err := t.ReadKey()
 		if err != nil {
 			return err
 		}
 
-		a.handleKey(key)
+		a.handleInput(event)
 		if !a.quit {
 			a.render()
 		}
@@ -105,9 +107,24 @@ func (a *App) Run() error {
 	return nil
 }
 
-func (a *App) handleKey(key Key) {
-	// Clear any temporary status message on keypress.
+func (a *App) handleInput(event InputEvent) {
+	// Clear any temporary status message on input.
 	a.statusBar.ClearMessage()
+
+	// Handle mouse events.
+	if event.Type == EventMouse {
+		a.handleMouse(event.Mouse)
+		return
+	}
+
+	// Handle keyboard events.
+	key := event.Key
+
+	// If outline is active, handle it first.
+	if a.outline.Active {
+		a.handleOutlineKey(key)
+		return
+	}
 
 	// If picker is active, handle it first.
 	if a.picker.Active {
@@ -129,14 +146,37 @@ func (a *App) handleKey(key Key) {
 	}
 }
 
+func (a *App) handleMouse(mouse MouseEvent) {
+	// Ignore mouse events when outline, picker, or prompt is active.
+	if a.outline.Active || a.picker.Active || a.statusBar.Prompt != PromptNone {
+		return
+	}
+
+	// Only handle left button press for now.
+	if mouse.Button != MouseLeft || !mouse.Press {
+		return
+	}
+
+	// Convert mouse coordinates to buffer position.
+	line, col := a.mouseToBufferPos(mouse.Row, mouse.Col)
+	if line >= 0 && col >= 0 {
+		eb := a.currentBuf()
+		eb.cursorLine = line
+		eb.cursorCol = col
+	}
+}
+
 func (a *App) handleDefaultKey(key Key) {
 	// Leader key sequence: Space followed by a second key.
 	if a.leaderPending {
 		a.leaderPending = false
 		if key.Type == KeyRune {
 			switch key.Rune {
-			case 'p':
+			case 'b':
 				a.picker.Show(a.currentBuffer)
+				return
+			case 'h', 'H':
+				a.showOutline()
 				return
 			}
 		}
@@ -325,6 +365,57 @@ func (a *App) handlePickerKey(key Key) {
 		a.currentBuffer = a.picker.Selected
 		a.picker.Hide()
 	}
+}
+
+func (a *App) handleOutlineKey(key Key) {
+	switch key.Type {
+	case KeyEscape:
+		a.outline.Hide()
+	case KeyUp:
+		a.outline.MoveUp()
+	case KeyDown:
+		a.outline.MoveDown()
+	case KeyRune:
+		switch key.Rune {
+		case 'k':
+			a.outline.MoveUp()
+		case 'j':
+			a.outline.MoveDown()
+		}
+	case KeyEnter:
+		a.jumpToOutlineItem()
+		a.outline.Hide()
+	}
+}
+
+func (a *App) showOutline() {
+	eb := a.currentBuf()
+
+	// Check if file is markdown.
+	if !IsMarkdownFile(eb.buf.Filename) {
+		a.statusBar.SetMessage("Outline only available for markdown files")
+		return
+	}
+
+	// Extract headings.
+	items := ExtractHeadings(eb.buf)
+	if len(items) == 0 {
+		a.statusBar.SetMessage("No headings found")
+		return
+	}
+
+	a.outline.Show(items)
+}
+
+func (a *App) jumpToOutlineItem() {
+	if a.outline.Selected < 0 || a.outline.Selected >= len(a.outline.Items) {
+		return
+	}
+
+	item := a.outline.Items[a.outline.Selected]
+	eb := a.currentBuf()
+	eb.cursorLine = item.BufferLine
+	eb.cursorCol = 0
 }
 
 func (a *App) handlePromptKey(key Key) {
@@ -672,6 +763,63 @@ func (a *App) scrollUp(n int) {
 	}
 }
 
+// mouseToBufferPos converts terminal mouse coordinates to buffer line/col.
+// Returns (-1, -1) if the click is outside the text area.
+func (a *App) mouseToBufferPos(termRow, termCol int) (int, int) {
+	eb := a.currentBuf()
+	vp := a.viewport
+
+	// Account for top padding (1 line when scrollOffset == 0).
+	topPadding := 0
+	if eb.scrollOffset == 0 {
+		topPadding = 1
+	}
+
+	// Click on status bar or above text area — ignore.
+	if termRow == vp.Height || termRow < 1+topPadding {
+		return -1, -1
+	}
+
+	// Convert terminal row to display line index.
+	displayLineIdx := eb.scrollOffset + (termRow - 1 - topPadding)
+
+	// Generate wrapped display lines.
+	displayLines := WrapBuffer(eb.buf, vp.ColWidth)
+
+	// Check if click is beyond the last display line.
+	if displayLineIdx >= len(displayLines) {
+		// Click below text — place cursor at end of last line.
+		if len(displayLines) > 0 {
+			lastDL := displayLines[len(displayLines)-1]
+			line := lastDL.BufferLine
+			col := eb.buf.LineLen(line)
+			return line, col
+		}
+		return -1, -1
+	}
+
+	dl := displayLines[displayLineIdx]
+	bufferLine := dl.BufferLine
+
+	// Account for left margin in column calculation.
+	clickCol := termCol - 1 - vp.LeftMargin
+	if clickCol < 0 {
+		clickCol = 0
+	}
+
+	// Map display column to buffer column.
+	// The display line shows text starting at dl.Offset in the buffer line.
+	bufferCol := dl.Offset + clickCol
+
+	// Clamp to actual line length.
+	lineLen := eb.buf.LineLen(bufferLine)
+	if bufferCol > lineLen {
+		bufferCol = lineLen
+	}
+
+	return bufferLine, bufferCol
+}
+
 func (a *App) render() {
 	eb := a.currentBuf()
 	displayLines := WrapBuffer(eb.buf, a.viewport.ColWidth)
@@ -692,6 +840,11 @@ func (a *App) render() {
 	// Render picker overlay if active.
 	if a.picker.Active {
 		frame += a.renderer.RenderPicker(a.buffers, a.picker, a.currentBuffer, a.viewport)
+	}
+
+	// Render outline overlay if active.
+	if a.outline.Active {
+		frame += a.renderer.RenderOutline(a.outline, a.viewport)
 	}
 
 	os.Stdout.WriteString(frame)
