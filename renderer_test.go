@@ -129,8 +129,11 @@ func TestRenderPickerOverlay(t *testing.T) {
 
 	result := r.RenderPicker(buffers, picker, 0, vp)
 
-	if !strings.Contains(result, "Open buffers") {
+	if !strings.Contains(result, "Open Buffers") {
 		t.Error("picker should show title")
+	}
+	if !strings.Contains(result, "Space-b") {
+		t.Error("picker should show keybinding hint")
 	}
 	if !strings.Contains(result, "main.go") {
 		t.Error("picker should show first buffer name")

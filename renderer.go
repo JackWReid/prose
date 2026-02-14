@@ -74,70 +74,29 @@ func (r *Renderer) RenderFrame(
 
 // RenderPicker renders the buffer picker overlay centred on screen.
 func (r *Renderer) RenderPicker(buffers []*EditorBuffer, picker *Picker, currentBuffer int, vp *Viewport) string {
-	var b strings.Builder
-
-	// Hide cursor while picker is shown.
-	b.WriteString("\x1b[?25l")
-
-	// Calculate box dimensions.
-	maxNameLen := 0
-	for _, eb := range buffers {
-		name := pickerDisplayName(eb.Filename())
-		if len(name) > maxNameLen {
-			maxNameLen = len(name)
-		}
-	}
-	// Box width: "  > " (4) + name + "  " (2) padding + border (2)
-	innerWidth := maxNameLen + 6
-	title := " Open buffers "
-	if innerWidth < len(title)+2 {
-		innerWidth = len(title) + 2
-	}
-	boxWidth := innerWidth + 2 // +2 for left/right borders
-	boxHeight := len(buffers) + 2 // +2 for top/bottom borders
-
-	// Centre the box.
-	startCol := (vp.Width - boxWidth) / 2
-	if startCol < 0 {
-		startCol = 0
-	}
-	startRow := (vp.Height - boxHeight) / 2
-	if startRow < 1 {
-		startRow = 1
-	}
-
-	// Top border.
-	topLine := "┌" + title + strings.Repeat("─", innerWidth-len(title)) + "┐"
-	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow, startCol+1, topLine))
-
-	// Buffer rows.
+	// Build items for overlay.
+	items := make([]OverlayItem, len(buffers))
 	for i, eb := range buffers {
-		row := startRow + 1 + i
-		prefix := "    "
-		if i == picker.Selected {
-			prefix = "  > "
-		}
 		name := pickerDisplayName(eb.Filename())
-
-		// Colour dirty filenames yellow/bold.
 		displayName := name
+		// Colour dirty filenames yellow/bold.
 		if eb.IsDirty() {
-			displayName = "\x1b[1;33m" + name + "\x1b[0m\x1b[7m"
+			displayName = "\x1b[1;33m" + name + "\x1b[0m"
 		}
-
-		padding := innerWidth - 4 - len(name)
-		if padding < 0 {
-			padding = 0
+		items[i] = OverlayItem{
+			DisplayText: displayName,
+			RawText:     name,
 		}
-		line := "│" + prefix + displayName + strings.Repeat(" ", padding) + "  │"
-		b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m%s\x1b[0m", row, startCol+1, line))
 	}
 
-	// Bottom border.
-	bottomLine := "└" + strings.Repeat("─", innerWidth) + "┘"
-	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow+boxHeight-1, startCol+1, bottomLine))
-
-	return b.String()
+	return r.RenderOverlay(
+		"Open Buffers",
+		"Space-b/t",
+		items,
+		picker.Selected,
+		vp,
+		OverlayScrollInfo{}, // No scrolling in picker
+	)
 }
 
 func pickerDisplayName(filename string) string {
@@ -149,11 +108,6 @@ func pickerDisplayName(filename string) string {
 
 // RenderOutline renders the document outline overlay centred on screen.
 func (r *Renderer) RenderOutline(outline *Outline, vp *Viewport) string {
-	var b strings.Builder
-
-	// Hide cursor while outline is shown.
-	b.WriteString("\x1b[?25l")
-
 	// Max visible items (use ~20 or calculate from viewport).
 	maxVisible := 20
 	if vp.Height-6 < maxVisible {
@@ -165,27 +119,135 @@ func (r *Renderer) RenderOutline(outline *Outline, vp *Viewport) string {
 
 	visibleItems := outline.VisibleItems(maxVisible)
 	if len(visibleItems) == 0 {
+		return ""
+	}
+
+	// Build items for overlay.
+	items := make([]OverlayItem, len(visibleItems))
+	for i, item := range visibleItems {
+		// Indent based on heading level.
+		indent := strings.Repeat(" ", (item.Level-1)*2)
+		displayText := indent + item.Text
+		items[i] = OverlayItem{
+			DisplayText: displayText,
+			RawText:     displayText, // No ANSI codes in outline
+		}
+	}
+
+	// Determine which item is selected relative to visible items.
+	selectedIdx := outline.Selected - outline.ScrollOffset
+
+	return r.RenderOverlay(
+		"Document Outline",
+		"Space-h",
+		items,
+		selectedIdx,
+		vp,
+		OverlayScrollInfo{
+			ShowUp:   outline.ScrollOffset > 0,
+			ShowDown: outline.ScrollOffset+len(visibleItems) < len(outline.Items),
+		},
+	)
+}
+
+// RenderBrowser renders the directory browser overlay centred on screen.
+func (r *Renderer) RenderBrowser(browser *Browser, vp *Viewport) string {
+	// Max visible items (use ~20 or calculate from viewport).
+	maxVisible := 20
+	if vp.Height-6 < maxVisible {
+		maxVisible = vp.Height - 6
+	}
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+
+	visibleItems := browser.VisibleItems(maxVisible)
+	if len(visibleItems) == 0 {
+		return ""
+	}
+
+	// Build items for overlay.
+	items := make([]OverlayItem, len(visibleItems))
+	for i, item := range visibleItems {
+		displayName := item.Name
+		// Format directories with blue colour and "/" suffix.
+		if item.IsDir {
+			displayName = "\x1b[1;34m" + item.Name + "/\x1b[0m"
+		}
+		items[i] = OverlayItem{
+			DisplayText: displayName,
+			RawText:     item.Name,
+		}
+	}
+
+	// Determine which item is selected relative to visible items.
+	selectedIdx := browser.Selected - browser.ScrollOffset
+
+	return r.RenderOverlay(
+		"Browse Files",
+		"Space-O",
+		items,
+		selectedIdx,
+		vp,
+		OverlayScrollInfo{
+			ShowUp:   browser.ScrollOffset > 0,
+			ShowDown: browser.ScrollOffset+len(visibleItems) < len(browser.Items),
+		},
+	)
+}
+
+// OverlayItem represents a single item in an overlay list.
+type OverlayItem struct {
+	DisplayText string // The text to show (may contain ANSI codes)
+	RawText     string // Plain text without ANSI (for width calculation)
+}
+
+// OverlayScrollInfo contains scroll indicator information.
+type OverlayScrollInfo struct {
+	ShowUp   bool // Show ↑ indicator
+	ShowDown bool // Show ↓ indicator
+}
+
+// RenderOverlay renders a centred floating overlay with embedded title, proper ANSI handling,
+// and reverse video only on selected content (not borders).
+func (r *Renderer) RenderOverlay(
+	title string,
+	keybinding string,
+	items []OverlayItem,
+	selectedIdx int,
+	vp *Viewport,
+	scroll OverlayScrollInfo,
+) string {
+	var b strings.Builder
+
+	// Hide cursor while overlay is shown.
+	b.WriteString("\x1b[?25l")
+
+	if len(items) == 0 {
 		return b.String()
 	}
 
 	// Calculate box dimensions.
 	maxTextLen := 0
-	for _, item := range visibleItems {
-		indent := (item.Level - 1) * 2
-		displayLen := indent + len(item.Text)
-		if displayLen > maxTextLen {
-			maxTextLen = displayLen
+	for _, item := range items {
+		if len(item.RawText) > maxTextLen {
+			maxTextLen = len(item.RawText)
 		}
 	}
 
 	// Box width: "  > " (4) + text + "  " (2) padding + border (2)
 	innerWidth := maxTextLen + 6
-	title := " Document Outline "
-	if innerWidth < len(title)+2 {
-		innerWidth = len(title) + 2
+	// Minimum width: 60 characters (wider than before)
+	if innerWidth < 60 {
+		innerWidth = 60
+	}
+	// Embedded title format: "「Title <keybinding> "
+	titleText := "╭" + "─" + title + " <" + keybinding + "> "
+	if innerWidth < len(titleText)+2 {
+		innerWidth = len(titleText) + 2
 	}
 	boxWidth := innerWidth + 2 // +2 for left/right borders
-	boxHeight := len(visibleItems) + 2 // +2 for top/bottom borders
+	boxHeight := len(items) + 2 // +2 for top/bottom borders
 
 	// Centre the box.
 	startCol := (vp.Width - boxWidth) / 2
@@ -197,54 +259,67 @@ func (r *Renderer) RenderOutline(outline *Outline, vp *Viewport) string {
 		startRow = 1
 	}
 
-	// Top border.
-	topLine := "┌" + title + strings.Repeat("─", innerWidth-len(title)) + "┐"
+	// Top border with embedded title: "「Title <keybinding> ─────╮"
+	dashCount := innerWidth - visibleLen(titleText)
+	if dashCount < 0 {
+		dashCount = 0
+	}
+	topLine := titleText + strings.Repeat("─", dashCount + 1) + "╮"
 	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow, startCol+1, topLine))
 
 	// Item rows.
-	for i, item := range visibleItems {
+	for i, item := range items {
 		row := startRow + 1 + i
-		actualIdx := outline.ScrollOffset + i
 		prefix := "    "
-		if actualIdx == outline.Selected {
+		if i == selectedIdx {
 			prefix = "  > "
 		}
 
-		// Indent based on heading level.
-		indent := strings.Repeat(" ", (item.Level-1)*2)
-		displayText := indent + item.Text
-
-		// Calculate padding to fill inner width.
-		padding := innerWidth - 4 - len(displayText)
+		// Calculate padding using visibleLen to account for ANSI codes.
+		visibleWidth := visibleLen(item.DisplayText)
+		padding := innerWidth - 4 - visibleWidth - 2  // -2 for the explicit spaces before right border
 		if padding < 0 {
-			// Truncate if too long.
-			maxLen := innerWidth - 4
-			if maxLen > 0 && len(displayText) > maxLen {
-				displayText = displayText[:maxLen]
-			}
 			padding = 0
 		}
 
-		line := "│" + prefix + displayText + strings.Repeat(" ", padding) + "  │"
-		b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m%s\x1b[0m", row, startCol+1, line))
+		// Build line: only apply reverse video to selected content, not borders.
+		if i == selectedIdx {
+			// Selected: reverse video on content only.
+			content := prefix + item.DisplayText + strings.Repeat(" ", padding) + "  "
+			line := "│" + "\x1b[7m" + content + "\x1b[0m" + "│"
+			b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", row, startCol+1, line))
+		} else {
+			// Not selected: normal rendering.
+			line := "│" + prefix + item.DisplayText + strings.Repeat(" ", padding) + "  │"
+			b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", row, startCol+1, line))
+		}
 	}
 
 	// Bottom border.
-	bottomLine := "└" + strings.Repeat("─", innerWidth) + "┘"
+	bottomLine := "╰" + strings.Repeat("─", innerWidth) + "╯"
 	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow+boxHeight-1, startCol+1, bottomLine))
 
-	// Scroll indicators.
-	if outline.ScrollOffset > 0 {
-		// Show "↑" indicator at top.
+	// Scroll indicators (placed near right edge, inside border).
+	// If indicator overlaps selected row, render in reverse video.
+	if scroll.ShowUp {
 		indicatorRow := startRow + 1
 		indicatorCol := startCol + boxWidth - 2
-		b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m↑\x1b[0m", indicatorRow, indicatorCol))
+		if selectedIdx == 0 {
+			// Up arrow on selected row - use reverse video
+			b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m↑\x1b[0m", indicatorRow, indicatorCol))
+		} else {
+			b.WriteString(fmt.Sprintf("\x1b[%d;%dH↑", indicatorRow, indicatorCol))
+		}
 	}
-	if outline.ScrollOffset+len(visibleItems) < len(outline.Items) {
-		// Show "↓" indicator at bottom.
+	if scroll.ShowDown {
 		indicatorRow := startRow + boxHeight - 2
 		indicatorCol := startCol + boxWidth - 2
-		b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m↓\x1b[0m", indicatorRow, indicatorCol))
+		if selectedIdx == len(items)-1 {
+			// Down arrow on selected row - use reverse video
+			b.WriteString(fmt.Sprintf("\x1b[%d;%dH\x1b[7m↓\x1b[0m", indicatorRow, indicatorCol))
+		} else {
+			b.WriteString(fmt.Sprintf("\x1b[%d;%dH↓", indicatorRow, indicatorCol))
+		}
 	}
 
 	return b.String()

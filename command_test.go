@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -873,5 +874,162 @@ func TestRedoWithCtrlR(t *testing.T) {
 	}
 	if a.currentBuf().buf.Lines[0] != "first" || a.currentBuf().buf.Lines[1] != "third" {
 		t.Errorf("lines after redo: %v", a.currentBuf().buf.Lines)
+	}
+}
+
+// --- v1.7.0 feature tests: Quit-all commands ---
+
+func TestCommandQuitAll(t *testing.T) {
+	a := newTestApp("file1.txt")
+	a.buffers = append(a.buffers, NewEditorBuffer("file2.txt"))
+	a.buffers = append(a.buffers, NewEditorBuffer("file3.txt"))
+
+	a.executeCommand("qa")
+
+	if !a.quit {
+		t.Error(":qa should quit when all buffers are clean")
+	}
+}
+
+func TestCommandQuitAllWithDirty(t *testing.T) {
+	a := newTestApp("file1.txt")
+	a.buffers = append(a.buffers, NewEditorBuffer("file2.txt"))
+	a.buffers = append(a.buffers, NewEditorBuffer("file3.txt"))
+
+	// Make two buffers dirty.
+	a.buffers[0].buf.Dirty = true
+	a.buffers[2].buf.Dirty = true
+
+	a.executeCommand("qa")
+
+	if a.quit {
+		t.Error(":qa should not quit when buffers have unsaved changes")
+	}
+	if a.statusBar.StatusMessage == "" {
+		t.Error(":qa with dirty buffers should show error message")
+	}
+	if !strings.Contains(a.statusBar.StatusMessage, "2 buffer(s)") {
+		t.Errorf("error message should mention 2 dirty buffers, got: %q", a.statusBar.StatusMessage)
+	}
+}
+
+func TestCommandForceQuitAll(t *testing.T) {
+	a := newTestApp("file1.txt")
+	a.buffers = append(a.buffers, NewEditorBuffer("file2.txt"))
+	a.buffers[0].buf.Dirty = true
+	a.buffers[1].buf.Dirty = true
+
+	a.executeCommand("qa!")
+
+	if !a.quit {
+		t.Error(":qa! should force quit even with dirty buffers")
+	}
+}
+
+func TestCommandForceQuitAllAlternate(t *testing.T) {
+	a := newTestApp("file1.txt")
+	a.buffers = append(a.buffers, NewEditorBuffer("file2.txt"))
+	a.buffers[0].buf.Dirty = true
+
+	a.executeCommand("!qa")
+
+	if !a.quit {
+		t.Error(":!qa should force quit even with dirty buffers")
+	}
+}
+
+func TestCommandWriteQuitAll(t *testing.T) {
+	dir := t.TempDir()
+	path1 := filepath.Join(dir, "file1.txt")
+	path2 := filepath.Join(dir, "file2.txt")
+
+	a := newTestApp(path1)
+	a.buffers = append(a.buffers, NewEditorBuffer(path2))
+
+	// Make both dirty.
+	a.buffers[0].buf.Lines = []string{"content1"}
+	a.buffers[0].buf.Dirty = true
+	a.buffers[1].buf.Lines = []string{"content2"}
+	a.buffers[1].buf.Dirty = true
+
+	a.executeCommand("wqa")
+
+	if !a.quit {
+		t.Error(":wqa should quit after saving all buffers")
+	}
+	if a.buffers[0].buf.Dirty || a.buffers[1].buf.Dirty {
+		t.Error(":wqa should save all dirty buffers")
+	}
+
+	// Verify files were written.
+	data1, err1 := os.ReadFile(path1)
+	data2, err2 := os.ReadFile(path2)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("files should be saved: %v, %v", err1, err2)
+	}
+	if string(data1) != "content1\n" || string(data2) != "content2\n" {
+		t.Errorf("saved content: %q, %q", string(data1), string(data2))
+	}
+}
+
+func TestCommandWriteQuitAllAlternate(t *testing.T) {
+	dir := t.TempDir()
+	path1 := filepath.Join(dir, "file1.txt")
+
+	a := newTestApp(path1)
+	a.currentBuf().buf.Lines = []string{"content"}
+	a.currentBuf().buf.Dirty = true
+
+	a.executeCommand("qwa")
+
+	if !a.quit {
+		t.Error(":qwa should quit after saving")
+	}
+	if a.currentBuf().buf.Dirty {
+		t.Error(":qwa should save dirty buffer")
+	}
+}
+
+func TestCommandWriteQuitAllWithUnnamed(t *testing.T) {
+	a := newTestApp("")
+	a.buffers = append(a.buffers, NewEditorBuffer("file2.txt"))
+
+	// Make unnamed buffer dirty.
+	a.buffers[0].buf.Lines = []string{"unsaved"}
+	a.buffers[0].buf.Dirty = true
+
+	a.executeCommand("wqa")
+
+	if a.quit {
+		t.Error(":wqa should not quit with unnamed dirty buffer")
+	}
+	if a.statusBar.StatusMessage == "" {
+		t.Error(":wqa with unnamed dirty buffer should show error message")
+	}
+	if !strings.Contains(a.statusBar.StatusMessage, "unnamed") {
+		t.Errorf("error should mention unnamed buffers, got: %q", a.statusBar.StatusMessage)
+	}
+}
+
+func TestCommandWriteQuitAllPartialFailure(t *testing.T) {
+	dir := t.TempDir()
+	validPath := filepath.Join(dir, "valid.txt")
+	invalidPath := "/nonexistent/invalid.txt"
+
+	a := newTestApp(validPath)
+	a.buffers = append(a.buffers, NewEditorBuffer(invalidPath))
+
+	a.buffers[0].buf.Lines = []string{"content1"}
+	a.buffers[0].buf.Dirty = true
+	a.buffers[1].buf.Lines = []string{"content2"}
+	a.buffers[1].buf.Dirty = true
+
+	a.executeCommand("wqa")
+
+	if a.quit {
+		t.Error(":wqa should not quit if any save fails")
+	}
+	if a.statusBar.StatusMessage == "" {
+		t.Error(":wqa with save failure should show error message")
 	}
 }

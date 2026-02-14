@@ -26,6 +26,7 @@ type App struct {
 	terminal  *Terminal
 	picker    *Picker
 	outline   *Outline
+	browser   *Browser
 	mode      Mode
 
 	leaderPending bool   // Space was pressed, awaiting second key.
@@ -48,6 +49,7 @@ func NewApp(filenames []string) *App {
 		statusBar: NewStatusBar(),
 		picker:    &Picker{},
 		outline:   &Outline{},
+		browser:   &Browser{},
 		mode:      ModeDefault,
 	}
 	if len(filenames) == 0 {
@@ -132,6 +134,12 @@ func (a *App) handleInput(event InputEvent) {
 		return
 	}
 
+	// If browser is active, handle it first.
+	if a.browser.Active {
+		a.handleBrowserKey(key)
+		return
+	}
+
 	// If a prompt is active, handle it first.
 	if a.statusBar.Prompt != PromptNone {
 		a.handlePromptKey(key)
@@ -147,8 +155,8 @@ func (a *App) handleInput(event InputEvent) {
 }
 
 func (a *App) handleMouse(mouse MouseEvent) {
-	// Ignore mouse events when outline, picker, or prompt is active.
-	if a.outline.Active || a.picker.Active || a.statusBar.Prompt != PromptNone {
+	// Ignore mouse events when outline, picker, browser, or prompt is active.
+	if a.outline.Active || a.picker.Active || a.browser.Active || a.statusBar.Prompt != PromptNone {
 		return
 	}
 
@@ -172,11 +180,14 @@ func (a *App) handleDefaultKey(key Key) {
 		a.leaderPending = false
 		if key.Type == KeyRune {
 			switch key.Rune {
-			case 'b':
+			case 'b', 't':
 				a.picker.Show(a.currentBuffer)
 				return
 			case 'h', 'H':
 				a.showOutline()
+				return
+			case 'o', 'O':
+				a.showBrowser()
 				return
 			}
 		}
@@ -418,6 +429,115 @@ func (a *App) jumpToOutlineItem() {
 	eb.cursorCol = 0
 }
 
+func (a *App) showBrowser() {
+	eb := a.currentBuf()
+
+	// Determine directory to browse.
+	dir := "."
+	if eb.buf.Filename != "" {
+		dir = filepath.Dir(eb.buf.Filename)
+	}
+
+	// Show browser.
+	if err := a.browser.Show(dir); err != nil {
+		a.statusBar.SetMessage("Error opening directory: " + err.Error())
+		return
+	}
+
+	// Show message if directory is empty.
+	if len(a.browser.Items) == 0 {
+		a.statusBar.SetMessage("Directory is empty")
+		a.browser.Hide()
+	}
+}
+
+func (a *App) handleBrowserKey(key Key) {
+	switch key.Type {
+	case KeyEscape:
+		a.browser.Hide()
+	case KeyUp:
+		a.browser.MoveUp()
+	case KeyDown:
+		a.browser.MoveDown()
+	case KeyLeft:
+		a.navigateToParentDirectory()
+	case KeyRune:
+		switch key.Rune {
+		case 'k':
+			a.browser.MoveUp()
+		case 'j':
+			a.browser.MoveDown()
+		case 'h':
+			a.navigateToParentDirectory()
+		case 'b', 't':
+			// Open in new buffer.
+			a.openBrowserItemNewBuffer()
+			a.browser.Hide()
+		}
+	case KeyEnter:
+		a.openBrowserItem()
+	}
+}
+
+func (a *App) navigateToParentDirectory() {
+	if a.browser.CurrentDir == "" {
+		return
+	}
+
+	// Get parent directory.
+	parentDir := filepath.Dir(a.browser.CurrentDir)
+
+	// Don't navigate above root.
+	if parentDir == a.browser.CurrentDir {
+		return
+	}
+
+	// Navigate to parent.
+	if err := a.browser.Show(parentDir); err != nil {
+		a.statusBar.SetMessage("Error opening parent directory: " + err.Error())
+		a.browser.Hide()
+	}
+}
+
+func (a *App) openBrowserItem() {
+	item := a.browser.SelectedItem()
+	if item == nil {
+		return
+	}
+
+	if item.IsDir {
+		// Navigate into subdirectory.
+		if err := a.browser.Show(item.Path); err != nil {
+			a.statusBar.SetMessage("Error opening directory: " + err.Error())
+			a.browser.Hide()
+		} else if len(a.browser.Items) == 0 {
+			a.statusBar.SetMessage("Directory is empty")
+			a.browser.Hide()
+		}
+	} else {
+		// Open file in current buffer.
+		idx := a.openBuffer(item.Path)
+		a.currentBuffer = idx
+		a.browser.Hide()
+	}
+}
+
+func (a *App) openBrowserItemNewBuffer() {
+	item := a.browser.SelectedItem()
+	if item == nil {
+		return
+	}
+
+	if item.IsDir {
+		a.statusBar.SetMessage("Cannot open directory in buffer")
+		return
+	}
+
+	// Force new buffer by opening the file.
+	idx := a.openBuffer(item.Path)
+	a.currentBuffer = idx
+}
+
 func (a *App) handlePromptKey(key Key) {
 	eb := a.currentBuf()
 	switch a.statusBar.Prompt {
@@ -510,6 +630,52 @@ func (a *App) executeCommand(cmd string) {
 			}
 			eb.buf.Filename = newName
 			eb.highlighter = DetectHighlighter(eb.buf.Filename)
+		}
+
+	case cmd == "qa":
+		// Quit all buffers — fail if any have unsaved changes.
+		var dirtyBuffers []string
+		for _, buf := range a.buffers {
+			if buf.buf.Dirty {
+				name := buf.Filename()
+				if name == "" {
+					name = "[unnamed]"
+				}
+				dirtyBuffers = append(dirtyBuffers, name)
+			}
+		}
+		if len(dirtyBuffers) > 0 {
+			a.statusBar.SetMessage(fmt.Sprintf("Unsaved changes in %d buffer(s): %s. Use :qa! to discard.",
+				len(dirtyBuffers), strings.Join(dirtyBuffers, ", ")))
+		} else {
+			a.quit = true
+		}
+
+	case cmd == "qa!" || cmd == "!qa":
+		// Force quit all buffers, discarding any unsaved changes.
+		a.quit = true
+
+	case cmd == "wqa" || cmd == "qwa":
+		// Write all dirty buffers, then quit — fail if any unnamed buffer is dirty.
+		var unnamedDirty int
+		var saveFailures []string
+		for _, buf := range a.buffers {
+			if buf.buf.Dirty {
+				if buf.buf.Filename == "" {
+					unnamedDirty++
+				} else {
+					if err := buf.buf.Save(""); err != nil {
+						saveFailures = append(saveFailures, buf.Filename()+": "+err.Error())
+					}
+				}
+			}
+		}
+		if unnamedDirty > 0 {
+			a.statusBar.SetMessage(fmt.Sprintf("Cannot save %d unnamed buffer(s). Use :qa! to discard, or save them first.", unnamedDirty))
+		} else if len(saveFailures) > 0 {
+			a.statusBar.SetMessage(fmt.Sprintf("Save failed: %s", strings.Join(saveFailures, "; ")))
+		} else {
+			a.quit = true
 		}
 
 	default:
@@ -845,6 +1011,11 @@ func (a *App) render() {
 	// Render outline overlay if active.
 	if a.outline.Active {
 		frame += a.renderer.RenderOutline(a.outline, a.viewport)
+	}
+
+	// Render browser overlay if active.
+	if a.browser.Active {
+		frame += a.renderer.RenderBrowser(a.browser, a.viewport)
 	}
 
 	os.Stdout.WriteString(frame)
