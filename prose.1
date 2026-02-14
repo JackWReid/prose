@@ -173,7 +173,12 @@ Undo last change
 Redo previously undone change
 .SH SPELL CHECKING
 .B prose
-includes real-time British English spell checking for Markdown (.md, .markdown) and text (.txt) files. Misspelled words are highlighted, and spelling errors can be navigated using
+includes real-time British English spell checking for Markdown (.md, .markdown) and text (.txt) files.
+Spell checking is
+.B off by default
+and can be toggled using the
+.B :spell
+command. When enabled, misspelled words are highlighted, and spelling errors can be navigated using
 .B x
 (next error) and
 .B X
@@ -268,6 +273,10 @@ Alias for :wqa
 .BI :rename " newname"
 Rename/move current file to
 .I newname
+.SS Spell Checking
+.TP
+.B :spell
+Toggle spell checking on/off. Spell checking is off by default and only works for Markdown (.md, .markdown) and text (.txt) files.
 .SH MARKDOWN SUPPORT
 .SS Syntax Highlighting
 Markdown files (.md, .markdown) receive syntax highlighting for:

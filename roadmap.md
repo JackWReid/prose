@@ -59,3 +59,6 @@
 
 ## 1.13
 - Spellcheck is off by default and is toggled with `:spell`
+
+## 1.14
+- TBD

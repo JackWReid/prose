@@ -21,15 +21,16 @@ type App struct {
 	buffers       []*EditorBuffer
 	currentBuffer int
 
-	viewport     *Viewport
-	renderer     *Renderer
-	statusBar    *StatusBar
-	terminal     *Terminal
-	picker       *Picker
-	outline      *Outline
-	browser      *Browser
-	spellChecker *SpellChecker
-	mode         Mode
+	viewport         *Viewport
+	renderer         *Renderer
+	statusBar        *StatusBar
+	terminal         *Terminal
+	picker           *Picker
+	outline          *Outline
+	browser          *Browser
+	spellChecker     *SpellChecker
+	spellCheckEnabled bool // Global toggle for spell checking (default: false).
+	mode             Mode
 
 	leaderPending    bool   // Space was pressed, awaiting second key.
 	dPending         bool   // 'd' was pressed, awaiting second 'd' for dd.
@@ -49,12 +50,13 @@ func (a *App) currentBuf() *EditorBuffer {
 
 func NewApp(filenames []string) *App {
 	app := &App{
-		renderer:  NewRenderer(),
-		statusBar: NewStatusBar(),
-		picker:    &Picker{},
-		outline:   &Outline{},
-		browser:   &Browser{},
-		mode:      ModeDefault,
+		renderer:          NewRenderer(),
+		statusBar:         NewStatusBar(),
+		picker:            &Picker{},
+		outline:           &Outline{},
+		browser:           &Browser{},
+		mode:              ModeDefault,
+		spellCheckEnabled: false, // Spellcheck is off by default.
 	}
 	if len(filenames) == 0 {
 		app.buffers = []*EditorBuffer{NewEditorBuffer("")}
@@ -81,9 +83,9 @@ func (a *App) Run() error {
 	}
 	a.spellChecker = spellChecker
 
-	// Run initial spell check on all buffers that should be checked.
+	// Run initial spell check on all buffers that should be checked (if enabled).
 	for _, eb := range a.buffers {
-		if eb.ShouldSpellCheck() {
+		if a.spellCheckEnabled && eb.ShouldSpellCheck() {
 			eb.spellErrors = nil
 			for i := 0; i < len(eb.buf.Lines); i++ {
 				lineErrors := spellChecker.CheckLine(i, eb.buf.Lines[i])
@@ -107,8 +109,10 @@ func (a *App) Run() error {
 
 	// Main event loop.
 	for !a.quit {
-		// Perform debounced spell checking.
-		a.currentBuf().PerformSpellCheck(a.spellChecker)
+		// Perform debounced spell checking (if enabled).
+		if a.spellCheckEnabled {
+			a.currentBuf().PerformSpellCheck(a.spellChecker)
+		}
 
 		// Check for resize signal (non-blocking).
 		select {
@@ -836,6 +840,9 @@ func (a *App) executeCommand(cmd string) {
 		} else {
 			a.quit = true
 		}
+
+	case cmd == "spell":
+		a.toggleSpellCheck()
 
 	default:
 		a.statusBar.SetMessage("Unknown command: " + cmd)
@@ -1584,6 +1591,31 @@ func (a *App) render() {
 	}
 
 	os.Stdout.WriteString(frame)
+}
+
+// toggleSpellCheck toggles spell checking on/off globally.
+func (a *App) toggleSpellCheck() {
+	a.spellCheckEnabled = !a.spellCheckEnabled
+
+	if a.spellCheckEnabled {
+		// Turning on: run spell check on all appropriate buffers.
+		for _, eb := range a.buffers {
+			if eb.ShouldSpellCheck() {
+				eb.spellErrors = nil
+				for i := 0; i < len(eb.buf.Lines); i++ {
+					lineErrors := a.spellChecker.CheckLine(i, eb.buf.Lines[i])
+					eb.spellErrors = append(eb.spellErrors, lineErrors...)
+				}
+			}
+		}
+		a.statusBar.SetMessage("Spell check enabled")
+	} else {
+		// Turning off: clear all spell errors.
+		for _, eb := range a.buffers {
+			eb.spellErrors = nil
+		}
+		a.statusBar.SetMessage("Spell check disabled")
+	}
 }
 
 func formatBufferInfo(current, total int) string {
