@@ -13,7 +13,7 @@ func TestRenderFrameContainsText(t *testing.T) {
 	}
 	vp := NewViewport(120, 10)
 
-	frame := r.RenderFrame(dls, vp, 0, 0, 0, " test.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1)
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " test.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
 	if !strings.Contains(frame, "Hello, world!") {
 		t.Error("frame should contain first line text")
@@ -34,7 +34,7 @@ func TestRenderFrameStatusBarReverse(t *testing.T) {
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "text"}}
 	vp := NewViewport(80, 5)
 
-	frame := r.RenderFrame(dls, vp, 0, 0, 0, " file.txt", "3 words  EDIT ", PlainHighlighter{}, nil, ModeDefault, -1, -1)
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " file.txt", "3 words  EDIT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
 	// Should contain reverse video escape code.
 	if !strings.Contains(frame, "\x1b[7m") {
@@ -51,7 +51,7 @@ func TestRenderFrameWithMargin(t *testing.T) {
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "centered"}}
 	vp := NewViewport(120, 5) // margin = (120-100)/2 = 10
 
-	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1)
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
 	// The text should be preceded by spaces for the left margin.
 	if !strings.Contains(frame, strings.Repeat(" ", 10)+"centered") {
@@ -67,7 +67,7 @@ func TestRenderFrameScrolled(t *testing.T) {
 	}
 	vp := NewViewport(120, 10) // 9 visible lines
 
-	frame := r.RenderFrame(dls, vp, 5, 5, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1)
+	frame := r.RenderFrame(dls, vp, 5, 5, 0, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
 	// Line at index 5 has 6 x's. Should be in the frame.
 	if !strings.Contains(frame, "xxxxxx") {
@@ -80,7 +80,7 @@ func TestRenderFrameCursorPosition(t *testing.T) {
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "hello"}}
 	vp := NewViewport(120, 10) // margin = 10
 
-	frame := r.RenderFrame(dls, vp, 0, 0, 3, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1)
+	frame := r.RenderFrame(dls, vp, 0, 0, 3, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
 	// At scroll 0, top padding = 1. Cursor should be at row 2, col margin+3+1 = 14.
 	if !strings.Contains(frame, "\x1b[2;14H") {
@@ -96,7 +96,7 @@ func TestRenderFrameCursorPositionScrolled(t *testing.T) {
 	}
 	vp := NewViewport(120, 10)
 
-	frame := r.RenderFrame(dls, vp, 5, 7, 2, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1)
+	frame := r.RenderFrame(dls, vp, 5, 7, 2, " f.txt", "5 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
 	// screenRow = 7 - 5 + 1 + 0 = 3, screenCol = 10 + 2 + 1 = 13
 	if !strings.Contains(frame, "\x1b[3;13H") {
@@ -109,7 +109,7 @@ func TestRenderFrameTopPadding(t *testing.T) {
 	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "first line"}}
 	vp := NewViewport(80, 5) // No margin (80 < 100)
 
-	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "2 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1)
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "2 words  DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
 
 	// At scroll 0, content starts at row 2 (top padding = 1).
 	if !strings.Contains(frame, "\x1b[2;1H") {

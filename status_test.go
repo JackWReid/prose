@@ -102,14 +102,14 @@ func TestFormatLeftPrompt(t *testing.T) {
 
 func TestFormatRight(t *testing.T) {
 	sb := NewStatusBar()
-	if got := sb.FormatRight(ModeDefault, 42, 0); got != "42 words  DEFAULT " {
+	if got := sb.FormatRight(ModeDefault, 42, 0, false, 0, 0); got != "42 words  DEFAULT " {
 		t.Errorf("default mode: %q", got)
 	}
-	if got := sb.FormatRight(ModeEdit, 0, 0); got != "0 words  EDIT " {
+	if got := sb.FormatRight(ModeEdit, 0, 0, false, 0, 0); got != "0 words  EDIT " {
 		t.Errorf("edit mode: %q", got)
 	}
 	sb.StartPrompt(PromptSaveNew)
-	if got := sb.FormatRight(ModeDefault, 10, 0); got != "" {
+	if got := sb.FormatRight(ModeDefault, 10, 0, false, 0, 0); got != "" {
 		t.Errorf("during prompt: %q", got)
 	}
 }

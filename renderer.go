@@ -29,6 +29,9 @@ func (r *Renderer) RenderFrame(
 	mode Mode,
 	selectionStart int,
 	selectionEnd int,
+	searchActive bool,
+	searchMatches []SearchMatch,
+	searchCurrentIdx int,
 ) string {
 	r.buf.Reset()
 
@@ -57,6 +60,7 @@ func (r *Renderer) RenderFrame(
 			text := displayLines[idx].Text
 			text = highlighter.Highlight(text)
 			text = r.applySpellHighlighting(text, displayLines[idx], spellErrors)
+			text = r.applySearchHighlighting(text, displayLines[idx], searchActive, searchMatches, searchCurrentIdx)
 			text = TruncateVisible(text, vp.ColWidth)
 
 			// Apply reverse video for line-select mode
@@ -475,6 +479,101 @@ func (r *Renderer) applySpellHighlighting(text string, displayLine DisplayLine, 
 
 	// Close any still-active error highlighting at end of line
 	if len(activeErrors) > 0 {
+		result.WriteString("\x1b[39m\x1b[49m")
+	}
+
+	return result.String()
+}
+
+// applySearchHighlighting applies highlighting to search matches in the text.
+// Current match gets bright yellow background, other matches get lighter yellow.
+func (r *Renderer) applySearchHighlighting(text string, displayLine DisplayLine, searchActive bool, searchMatches []SearchMatch, searchCurrentIdx int) string {
+	if !searchActive || len(searchMatches) == 0 {
+		return text
+	}
+
+	// Find matches that apply to this display line
+	var relevantMatches []struct {
+		match     SearchMatch
+		isCurrent bool
+	}
+	for i, match := range searchMatches {
+		if match.Line == displayLine.BufferLine {
+			relevantMatches = append(relevantMatches, struct {
+				match     SearchMatch
+				isCurrent bool
+			}{
+				match:     match,
+				isCurrent: i == searchCurrentIdx,
+			})
+		}
+	}
+
+	if len(relevantMatches) == 0 {
+		return text
+	}
+
+	// Parse the text to track ANSI codes and real character positions
+	runes := []rune(text)
+	var result strings.Builder
+	realCol := 0                         // Real character position (excluding ANSI codes)
+	i := 0                               // Current index in runes
+	inANSI := false                      // Whether we're inside an ANSI escape sequence
+	activeMatches := make(map[int]bool) // Track which matches are currently highlighted
+
+	for i < len(runes) {
+		r := runes[i]
+
+		// Detect ANSI escape sequence start
+		if r == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
+			inANSI = true
+			result.WriteRune(r)
+			i++
+			continue
+		}
+
+		// If in ANSI sequence, copy until 'm' (end of sequence)
+		if inANSI {
+			result.WriteRune(r)
+			if r == 'm' {
+				inANSI = false
+			}
+			i++
+			continue
+		}
+
+		// Check if we're at the start of any match
+		for idx, rm := range relevantMatches {
+			if realCol == rm.match.StartCol && !activeMatches[idx] {
+				// Start search match highlighting
+				if rm.isCurrent {
+					// Current match: bright yellow background, black text
+					result.WriteString("\x1b[38;5;0m\x1b[48;5;226m")
+				} else {
+					// Other matches: lighter yellow background, black text
+					result.WriteString("\x1b[38;5;0m\x1b[48;5;229m")
+				}
+				activeMatches[idx] = true
+			}
+		}
+
+		// Write the actual character
+		result.WriteRune(r)
+		realCol++
+		i++
+
+		// Check if we're at the end of any match
+		for idx, rm := range relevantMatches {
+			if realCol == rm.match.EndCol && activeMatches[idx] {
+				// Reset foreground and background to restore highlighting
+				result.WriteString("\x1b[39m\x1b[49m")
+				delete(activeMatches, idx)
+			}
+		}
+	}
+
+	// Close any still-active match highlighting at end of line
+	if len(activeMatches) > 0 {
 		result.WriteString("\x1b[39m\x1b[49m")
 	}
 

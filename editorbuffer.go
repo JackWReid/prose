@@ -20,6 +20,19 @@ type EditorBuffer struct {
 	spellErrors       []SpellError  // Cached spell errors
 	spellCheckPending bool          // Debounce flag
 	lastEdit          time.Time     // Last edit timestamp
+
+	// Search state
+	searchActive     bool
+	searchQuery      string
+	searchMatches    []SearchMatch
+	searchCurrentIdx int // -1 when no current match
+}
+
+// SearchMatch represents a single search match in the buffer.
+type SearchMatch struct {
+	Line     int // Buffer line number
+	StartCol int // Starting rune index
+	EndCol   int // Ending rune index
 }
 
 // NewEditorBuffer creates a new EditorBuffer for the given filename.

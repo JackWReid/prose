@@ -12,6 +12,7 @@ const (
 	PromptNone    PromptType = iota
 	PromptSaveNew                    // "Save as: " for unnamed buffer on first save
 	PromptCommand                    // ":" command input
+	PromptSearch                     // "/" search input
 )
 
 // StatusBar generates status bar text and handles prompt state.
@@ -34,6 +35,9 @@ func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string, s
 	}
 	if s.Prompt == PromptCommand {
 		return fmt.Sprintf(" :%s", s.PromptText)
+	}
+	if s.Prompt == PromptSearch {
+		return fmt.Sprintf(" /%s", s.PromptText)
 	}
 
 	if s.StatusMessage != "" {
@@ -63,7 +67,7 @@ func (s *StatusBar) FormatLeft(filename string, dirty bool, bufferInfo string, s
 }
 
 // FormatRight returns the right-aligned portion of the status bar.
-func (s *StatusBar) FormatRight(mode Mode, wordCount int, spellErrorCount int) string {
+func (s *StatusBar) FormatRight(mode Mode, wordCount int, spellErrorCount int, searchActive bool, searchCurrentIdx int, searchMatchCount int) string {
 	if s.Prompt != PromptNone {
 		return ""
 	}
@@ -77,13 +81,19 @@ func (s *StatusBar) FormatRight(mode Mode, wordCount int, spellErrorCount int) s
 		modeStr = "LINE-SELECT"
 	}
 
+	// Show search match counter if search is active
+	searchStr := ""
+	if searchActive && searchMatchCount > 0 {
+		searchStr = fmt.Sprintf("%d/%d matches  ", searchCurrentIdx+1, searchMatchCount)
+	}
+
 	// Show error count if there are spelling errors
 	errorStr := ""
 	if spellErrorCount > 0 {
 		errorStr = fmt.Sprintf("%d errors  ", spellErrorCount)
 	}
 
-	return fmt.Sprintf("%s%d words  %s ", errorStr, wordCount, modeStr)
+	return fmt.Sprintf("%s%s%d words  %s ", searchStr, errorStr, wordCount, modeStr)
 }
 
 // StartPrompt begins a prompt of the given type.

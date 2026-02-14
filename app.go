@@ -276,6 +276,18 @@ func (a *App) handleDefaultKey(key Key) {
 			a.mode = ModeEdit
 		case ':':
 			a.statusBar.StartPrompt(PromptCommand)
+		case '/':
+			a.statusBar.StartPrompt(PromptSearch)
+		case 'n':
+			// Jump to next search match if search is active
+			if eb.searchActive {
+				a.jumpToNextMatch()
+			}
+		case 'N':
+			// Jump to previous search match if search is active
+			if eb.searchActive {
+				a.jumpToPrevMatch()
+			}
 		case 'h':
 			a.moveCursor(KeyLeft)
 		case 'j':
@@ -683,6 +695,19 @@ func (a *App) handlePromptKey(key Key) {
 		}
 		if done {
 			a.executeCommand(text)
+		}
+
+	case PromptSearch:
+		text, done, cancelled := a.statusBar.HandlePromptKey(key)
+		if cancelled {
+			// Clear search on escape
+			a.clearSearch()
+			return
+		}
+		if done {
+			if text != "" {
+				a.activateSearch(text)
+			}
 		}
 	}
 }
@@ -1217,6 +1242,149 @@ func (a *App) jumpToPrevSpellError() {
 	eb.cursorCol = lastErr.StartCol
 }
 
+// activateSearch performs a case-insensitive search for the query and jumps to the first match.
+func (a *App) activateSearch(query string) {
+	eb := a.currentBuf()
+
+	if query == "" {
+		return
+	}
+
+	// Clear previous search state
+	eb.searchMatches = nil
+	eb.searchQuery = query
+	eb.searchCurrentIdx = -1
+
+	// Convert query to lowercase for case-insensitive matching
+	queryLower := strings.ToLower(query)
+	queryRunes := []rune(queryLower)
+
+	// Search all lines for matches
+	for lineIdx := 0; lineIdx < len(eb.buf.Lines); lineIdx++ {
+		line := eb.buf.Lines[lineIdx]
+		lineRunes := []rune(line)
+		lineLower := []rune(strings.ToLower(line))
+
+		// Check for substring match at each position
+		for col := 0; col <= len(lineRunes)-len(queryRunes); col++ {
+			match := true
+			for i := 0; i < len(queryRunes); i++ {
+				if lineLower[col+i] != queryRunes[i] {
+					match = false
+					break
+				}
+			}
+			if match {
+				eb.searchMatches = append(eb.searchMatches, SearchMatch{
+					Line:     lineIdx,
+					StartCol: col,
+					EndCol:   col + len(queryRunes),
+				})
+			}
+		}
+	}
+
+	// If no matches found, show message and return
+	if len(eb.searchMatches) == 0 {
+		a.statusBar.SetMessage("No matches found")
+		eb.searchActive = false
+		return
+	}
+
+	// Activate search and jump to nearest match
+	eb.searchActive = true
+	a.jumpToNearestMatch(true)
+}
+
+// clearSearch clears the search state and highlighting.
+func (a *App) clearSearch() {
+	eb := a.currentBuf()
+	eb.searchActive = false
+	eb.searchQuery = ""
+	eb.searchMatches = nil
+	eb.searchCurrentIdx = -1
+}
+
+// jumpToNextMatch moves to the next search match with wraparound.
+func (a *App) jumpToNextMatch() {
+	eb := a.currentBuf()
+	if !eb.searchActive || len(eb.searchMatches) == 0 {
+		return
+	}
+
+	// Move to next match
+	eb.searchCurrentIdx++
+	if eb.searchCurrentIdx >= len(eb.searchMatches) {
+		eb.searchCurrentIdx = 0 // Wrap to first
+	}
+
+	// Jump to the match
+	match := eb.searchMatches[eb.searchCurrentIdx]
+	eb.cursorLine = match.Line
+	eb.cursorCol = match.StartCol
+}
+
+// jumpToPrevMatch moves to the previous search match with wraparound.
+func (a *App) jumpToPrevMatch() {
+	eb := a.currentBuf()
+	if !eb.searchActive || len(eb.searchMatches) == 0 {
+		return
+	}
+
+	// Move to previous match
+	eb.searchCurrentIdx--
+	if eb.searchCurrentIdx < 0 {
+		eb.searchCurrentIdx = len(eb.searchMatches) - 1 // Wrap to last
+	}
+
+	// Jump to the match
+	match := eb.searchMatches[eb.searchCurrentIdx]
+	eb.cursorLine = match.Line
+	eb.cursorCol = match.StartCol
+}
+
+// jumpToNearestMatch finds the closest match from the current cursor position.
+// If forward is true, finds the first match at or after cursor; otherwise finds the last match before cursor.
+func (a *App) jumpToNearestMatch(forward bool) {
+	eb := a.currentBuf()
+	if len(eb.searchMatches) == 0 {
+		return
+	}
+
+	if forward {
+		// Find first match at or after cursor
+		for i, match := range eb.searchMatches {
+			if match.Line > eb.cursorLine || (match.Line == eb.cursorLine && match.StartCol >= eb.cursorCol) {
+				eb.searchCurrentIdx = i
+				eb.cursorLine = match.Line
+				eb.cursorCol = match.StartCol
+				return
+			}
+		}
+		// No match after cursor, wrap to first
+		eb.searchCurrentIdx = 0
+		match := eb.searchMatches[0]
+		eb.cursorLine = match.Line
+		eb.cursorCol = match.StartCol
+	} else {
+		// Find last match before cursor
+		for i := len(eb.searchMatches) - 1; i >= 0; i-- {
+			match := eb.searchMatches[i]
+			if match.Line < eb.cursorLine || (match.Line == eb.cursorLine && match.StartCol < eb.cursorCol) {
+				eb.searchCurrentIdx = i
+				eb.cursorLine = match.Line
+				eb.cursorCol = match.StartCol
+				return
+			}
+		}
+		// No match before cursor, wrap to last
+		eb.searchCurrentIdx = len(eb.searchMatches) - 1
+		match := eb.searchMatches[eb.searchCurrentIdx]
+		eb.cursorLine = match.Line
+		eb.cursorCol = match.StartCol
+	}
+}
+
 // ensureScratchBuffer ensures the scratch buffer exists and returns its index.
 func (a *App) ensureScratchBuffer() int {
 	// Check if scratch buffer already exists.
@@ -1334,7 +1502,7 @@ func (a *App) render() {
 	}
 
 	statusLeft := a.statusBar.FormatLeft(eb.Filename(), eb.IsDirty(), bufferInfo, eb.SpellErrorCount(), eb.isScratch)
-	statusRight := a.statusBar.FormatRight(a.mode, eb.WordCount(), eb.SpellErrorCount())
+	statusRight := a.statusBar.FormatRight(a.mode, eb.WordCount(), eb.SpellErrorCount(), eb.searchActive, eb.searchCurrentIdx, len(eb.searchMatches))
 
 	// Get selection range for line-select mode
 	selectionStart, selectionEnd := -1, -1
@@ -1342,7 +1510,7 @@ func (a *App) render() {
 		selectionStart, selectionEnd = a.getSelectionRange()
 	}
 
-	frame := a.renderer.RenderFrame(displayLines, a.viewport, eb.scrollOffset, cursorDL, cursorDC, statusLeft, statusRight, eb.highlighter, eb.spellErrors, a.mode, selectionStart, selectionEnd)
+	frame := a.renderer.RenderFrame(displayLines, a.viewport, eb.scrollOffset, cursorDL, cursorDC, statusLeft, statusRight, eb.highlighter, eb.spellErrors, a.mode, selectionStart, selectionEnd, eb.searchActive, eb.searchMatches, eb.searchCurrentIdx)
 
 	// Render picker overlay if active.
 	if a.picker.Active {
