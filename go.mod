@@ -1,4 +1,4 @@
-module prose
+module github.com/JackWReid/prose
 
 go 1.25.5
 
