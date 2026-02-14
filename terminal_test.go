@@ -41,6 +41,20 @@ func TestParseKeyCtrlZ(t *testing.T) {
 	}
 }
 
+func TestParseKeyCtrlY(t *testing.T) {
+	k := parseKey([]byte{25})
+	if k.Type != KeyCtrlY {
+		t.Errorf("expected ctrl-y, got type=%d", k.Type)
+	}
+}
+
+func TestParseKeyCtrlR(t *testing.T) {
+	k := parseKey([]byte{18})
+	if k.Type != KeyCtrlR {
+		t.Errorf("expected ctrl-r, got type=%d", k.Type)
+	}
+}
+
 func TestParseKeyArrows(t *testing.T) {
 	tests := []struct {
 		seq      []byte

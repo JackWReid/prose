@@ -97,6 +97,8 @@ const (
 	KeyLeft             // Arrow left
 	KeyRight            // Arrow right
 	KeyCtrlZ            // Ctrl+Z
+	KeyCtrlY            // Ctrl+Y
+	KeyCtrlR            // Ctrl+R
 	KeyCtrlD            // Ctrl+D
 	KeyCtrlU            // Ctrl+U
 	KeyHome             // Home
@@ -129,6 +131,10 @@ func parseKey(buf []byte) Key {
 			return Key{Type: KeyBackspace}
 		case b == 26: // Ctrl+Z
 			return Key{Type: KeyCtrlZ}
+		case b == 25: // Ctrl+Y
+			return Key{Type: KeyCtrlY}
+		case b == 18: // Ctrl+R
+			return Key{Type: KeyCtrlR}
 		case b == 4: // Ctrl+D
 			return Key{Type: KeyCtrlD}
 		case b == 21: // Ctrl+U

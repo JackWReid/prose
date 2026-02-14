@@ -10,6 +10,7 @@ const (
 	OpDeleteLine                    // Deleted a newline (joined lines)
 	OpInsertChars                   // Coalesced group of character inserts
 	OpDeleteWholeLine               // Deleted an entire line (dd)
+	OpInsertWholeLine               // Inserted an entire line (O or paste)
 )
 
 // UndoOp represents a single undoable operation or a coalesced group.
@@ -27,6 +28,7 @@ type UndoOp struct {
 // UndoStack manages the undo history with coalescing of consecutive inserts.
 type UndoStack struct {
 	ops      []UndoOp
+	redoOps  []UndoOp
 	coalesce *coalesceState
 }
 
@@ -42,9 +44,15 @@ func NewUndoStack() *UndoStack {
 	return &UndoStack{}
 }
 
+// clearRedo clears the redo stack when a new operation is performed.
+func (u *UndoStack) clearRedo() {
+	u.redoOps = nil
+}
+
 // PushInsertChar records a character insertion, coalescing with the previous
 // insert if it's at an adjacent position on the same line.
 func (u *UndoStack) PushInsertChar(line, col int, ch rune) {
+	u.clearRedo()
 	if u.coalesce != nil {
 		c := u.coalesce
 		if line == c.line && col == c.nextCol {
@@ -66,6 +74,7 @@ func (u *UndoStack) PushInsertChar(line, col int, ch rune) {
 
 // PushDeleteChar records a character deletion.
 func (u *UndoStack) PushDeleteChar(line, col int, ch rune, cursorLine, cursorCol int) {
+	u.clearRedo()
 	u.flushCoalesce()
 	u.ops = append(u.ops, UndoOp{
 		Type:       OpDeleteChar,
@@ -79,6 +88,7 @@ func (u *UndoStack) PushDeleteChar(line, col int, ch rune, cursorLine, cursorCol
 
 // PushInsertLine records a newline insertion (line split).
 func (u *UndoStack) PushInsertLine(line, col int, cursorLine, cursorCol int) {
+	u.clearRedo()
 	u.flushCoalesce()
 	u.ops = append(u.ops, UndoOp{
 		Type:       OpInsertLine,
@@ -91,6 +101,7 @@ func (u *UndoStack) PushInsertLine(line, col int, cursorLine, cursorCol int) {
 
 // PushDeleteLine records a newline deletion (line join).
 func (u *UndoStack) PushDeleteLine(line, col int, cursorLine, cursorCol int) {
+	u.clearRedo()
 	u.flushCoalesce()
 	u.ops = append(u.ops, UndoOp{
 		Type:       OpDeleteLine,
@@ -103,6 +114,7 @@ func (u *UndoStack) PushDeleteLine(line, col int, cursorLine, cursorCol int) {
 
 // PushDeleteWholeLine records a whole line deletion (dd operation).
 func (u *UndoStack) PushDeleteWholeLine(line int, content string, cursorLine, cursorCol int) {
+	u.clearRedo()
 	u.flushCoalesce()
 	u.ops = append(u.ops, UndoOp{
 		Type:       OpDeleteWholeLine,
@@ -110,6 +122,18 @@ func (u *UndoStack) PushDeleteWholeLine(line int, content string, cursorLine, cu
 		Text:       content,
 		CursorLine: cursorLine,
 		CursorCol:  cursorCol,
+	})
+}
+
+// PushInsertWholeLine records a whole line insertion (O operation or paste).
+func (u *UndoStack) PushInsertWholeLine(line int) {
+	u.clearRedo()
+	u.flushCoalesce()
+	u.ops = append(u.ops, UndoOp{
+		Type:       OpInsertWholeLine,
+		Line:       line,
+		CursorLine: line,
+		CursorCol:  0,
 	})
 }
 
@@ -150,6 +174,9 @@ func (u *UndoStack) Undo(buf *Buffer) (line, col int, ok bool) {
 	}
 	op := u.ops[len(u.ops)-1]
 	u.ops = u.ops[:len(u.ops)-1]
+
+	// Push to redo stack before applying inverse.
+	u.redoOps = append(u.redoOps, op)
 
 	switch op.Type {
 	case OpInsertChar:
@@ -197,6 +224,74 @@ func (u *UndoStack) Undo(buf *Buffer) (line, col int, ok bool) {
 			buf.InsertLine(op.Line, op.Text)
 		}
 		return op.CursorLine, op.CursorCol, true
+
+	case OpInsertWholeLine:
+		// Undo whole line insert: delete the line.
+		buf.DeleteLine(op.Line)
+		return op.CursorLine, op.CursorCol, true
+	}
+
+	return 0, 0, false
+}
+
+// Redo re-applies an operation from the redo stack.
+// Returns the cursor position to restore, and whether a redo occurred.
+func (u *UndoStack) Redo(buf *Buffer) (line, col int, ok bool) {
+	if len(u.redoOps) == 0 {
+		return 0, 0, false
+	}
+	op := u.redoOps[len(u.redoOps)-1]
+	u.redoOps = u.redoOps[:len(u.redoOps)-1]
+
+	// Push back to ops stack.
+	u.ops = append(u.ops, op)
+
+	switch op.Type {
+	case OpInsertChar:
+		// Redo insert: re-insert the character.
+		buf.InsertChar(op.Line, op.Col, op.Char)
+		return op.Line, op.Col + 1, true
+
+	case OpInsertChars:
+		// Redo coalesced inserts: re-insert the text.
+		runes := []rune(buf.Lines[op.Line])
+		text := []rune(op.Text)
+		newRunes := make([]rune, 0, len(runes)+len(text))
+		newRunes = append(newRunes, runes[:op.Col]...)
+		newRunes = append(newRunes, text...)
+		newRunes = append(newRunes, runes[op.Col:]...)
+		buf.Lines[op.Line] = string(newRunes)
+		buf.Dirty = true
+		return op.Line, op.Col + len(text), true
+
+	case OpDeleteChar:
+		// Redo delete: delete the character again.
+		runes := []rune(buf.Lines[op.Line])
+		if op.Col < len(runes) {
+			buf.Lines[op.Line] = string(append(runes[:op.Col], runes[op.Col+1:]...))
+			buf.Dirty = true
+		}
+		return op.CursorLine, op.CursorCol, true
+
+	case OpInsertLine:
+		// Redo newline insert: split the line again.
+		buf.InsertNewline(op.Line, op.Col)
+		return op.Line + 1, 0, true
+
+	case OpDeleteLine:
+		// Redo newline delete: join the lines again.
+		buf.JoinLines(op.Line)
+		return op.CursorLine, op.CursorCol, true
+
+	case OpDeleteWholeLine:
+		// Redo whole line delete: delete the line again.
+		buf.DeleteLine(op.Line)
+		return op.CursorLine, op.CursorCol, true
+
+	case OpInsertWholeLine:
+		// Redo whole line insert: re-insert empty line.
+		buf.InsertLine(op.Line, "")
+		return op.Line, 0, true
 	}
 
 	return 0, 0, false

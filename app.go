@@ -27,8 +27,11 @@ type App struct {
 	picker    *Picker
 	mode      Mode
 
-	leaderPending bool // Space was pressed, awaiting second key.
-	dPending      bool // 'd' was pressed, awaiting second 'd' for dd.
+	leaderPending bool   // Space was pressed, awaiting second key.
+	dPending      bool   // 'd' was pressed, awaiting second 'd' for dd.
+	gPending      bool   // 'g' was pressed, awaiting second 'g' for gg.
+	yPending      bool   // 'y' was pressed, awaiting second 'y' for yy.
+	yankBuffer    string // Shared yank buffer for yy/dd/p/P operations.
 	quit          bool
 	quitAfterSave bool // Set by :wq on unnamed buffers.
 }
@@ -152,6 +155,28 @@ func (a *App) handleDefaultKey(key Key) {
 		return
 	}
 
+	// gg operator: 'g' followed by 'g'.
+	if a.gPending {
+		a.gPending = false
+		if key.Type == KeyRune && key.Rune == 'g' {
+			a.jumpToTop()
+			return
+		}
+		// Not 'gg' — consume the key and cancel.
+		return
+	}
+
+	// yy operator: 'y' followed by 'y'.
+	if a.yPending {
+		a.yPending = false
+		if key.Type == KeyRune && key.Rune == 'y' {
+			a.yankLine()
+			return
+		}
+		// Not 'yy' — consume the key and cancel.
+		return
+	}
+
 	eb := a.currentBuf()
 	switch key.Type {
 	case KeyRune:
@@ -174,8 +199,25 @@ func (a *App) handleDefaultKey(key Key) {
 			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 			a.insertNewline()
 			a.mode = ModeEdit
+		case 'O':
+			eb.buf.InsertLine(eb.cursorLine, "")
+			eb.undo.PushInsertWholeLine(eb.cursorLine)
+			eb.cursorCol = 0
+			a.mode = ModeEdit
 		case 'd':
 			a.dPending = true
+		case 'y':
+			a.yPending = true
+		case 'p':
+			a.pasteBelow()
+		case 'P':
+			a.pasteAbove()
+		case 'u':
+			a.undoAction()
+		case 'g':
+			a.gPending = true
+		case 'G':
+			a.jumpToBottom()
 		case 'A':
 			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 			a.mode = ModeEdit
@@ -212,12 +254,18 @@ func (a *App) handleDefaultKey(key Key) {
 		a.scrollUp(visibleLines)
 	case KeyCtrlZ:
 		a.undoAction()
+	case KeyCtrlY:
+		a.redoAction()
+	case KeyCtrlR:
+		a.redoAction()
 	}
 }
 
 func (a *App) handleEditKey(key Key) {
 	// Clear any pending operators from Default mode.
 	a.dPending = false
+	a.gPending = false
+	a.yPending = false
 
 	eb := a.currentBuf()
 	switch key.Type {
@@ -251,6 +299,10 @@ func (a *App) handleEditKey(key Key) {
 		a.scrollUp(visibleLines)
 	case KeyCtrlZ:
 		a.undoAction()
+	case KeyCtrlY:
+		a.redoAction()
+	case KeyCtrlR:
+		a.redoAction()
 	}
 }
 
@@ -503,9 +555,57 @@ func (a *App) moveCursor(dir int) {
 	}
 }
 
+func (a *App) jumpToTop() {
+	eb := a.currentBuf()
+	eb.cursorLine = 0
+	eb.cursorCol = 0
+}
+
+func (a *App) jumpToBottom() {
+	eb := a.currentBuf()
+	eb.cursorLine = eb.buf.LineCount() - 1
+	eb.cursorCol = 0
+}
+
+func (a *App) yankLine() {
+	eb := a.currentBuf()
+	a.yankBuffer = eb.buf.Lines[eb.cursorLine]
+	a.statusBar.SetMessage("Yanked line")
+}
+
+func (a *App) pasteBelow() {
+	if a.yankBuffer == "" {
+		return
+	}
+	eb := a.currentBuf()
+	eb.buf.InsertLine(eb.cursorLine+1, a.yankBuffer)
+	eb.undo.PushInsertWholeLine(eb.cursorLine + 1)
+	eb.cursorLine++
+	eb.cursorCol = 0
+}
+
+func (a *App) pasteAbove() {
+	if a.yankBuffer == "" {
+		return
+	}
+	eb := a.currentBuf()
+	eb.buf.InsertLine(eb.cursorLine, a.yankBuffer)
+	eb.undo.PushInsertWholeLine(eb.cursorLine)
+	eb.cursorCol = 0
+}
+
 func (a *App) undoAction() {
 	eb := a.currentBuf()
 	line, col, ok := eb.undo.Undo(eb.buf)
+	if ok {
+		eb.cursorLine = line
+		eb.cursorCol = col
+	}
+}
+
+func (a *App) redoAction() {
+	eb := a.currentBuf()
+	line, col, ok := eb.undo.Redo(eb.buf)
 	if ok {
 		eb.cursorLine = line
 		eb.cursorCol = col
@@ -516,6 +616,7 @@ func (a *App) undoAction() {
 func (a *App) deleteWholeLine() {
 	eb := a.currentBuf()
 	content := eb.buf.DeleteLine(eb.cursorLine)
+	a.yankBuffer = content // Populate yank buffer for cut semantics.
 	eb.undo.PushDeleteWholeLine(eb.cursorLine, content, eb.cursorLine, eb.cursorCol)
 
 	// Clamp cursor position after deletion.

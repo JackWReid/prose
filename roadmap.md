@@ -33,3 +33,7 @@
 
 ## 1.8
 - English language spellcheck based on some system dictionary
+
+# 1.9
+- Enter line-select mode with <Shift-V>, y and d then act on whole lines
+- App-level scratch buffer. Send selections with s for lines in line-select mode and ss for a single line in Default mode.

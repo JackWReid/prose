@@ -590,3 +590,288 @@ func TestHomeEndEditMode(t *testing.T) {
 		t.Errorf("End in edit mode: got col %d", a.currentBuf().cursorCol)
 	}
 }
+
+// --- v1.5.0 feature tests ---
+
+func TestOCommandInsertLineAbove(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
+	a.currentBuf().cursorLine = 1
+	a.currentBuf().cursorCol = 3
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'O'})
+
+	if len(a.currentBuf().buf.Lines) != 4 {
+		t.Fatalf("expected 4 lines after O, got %d", len(a.currentBuf().buf.Lines))
+	}
+	if a.currentBuf().buf.Lines[1] != "" {
+		t.Errorf("inserted line should be empty, got %q", a.currentBuf().buf.Lines[1])
+	}
+	if a.currentBuf().buf.Lines[2] != "second" {
+		t.Errorf("original line should be pushed down, got %q", a.currentBuf().buf.Lines[2])
+	}
+	if a.mode != ModeEdit {
+		t.Error("O should enter edit mode")
+	}
+	if a.currentBuf().cursorLine != 1 || a.currentBuf().cursorCol != 0 {
+		t.Errorf("cursor should be at (1, 0), got (%d, %d)", a.currentBuf().cursorLine, a.currentBuf().cursorCol)
+	}
+}
+
+func TestOCommandAtFirstLine(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first"}
+	a.currentBuf().cursorLine = 0
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'O'})
+
+	if len(a.currentBuf().buf.Lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(a.currentBuf().buf.Lines))
+	}
+	if a.currentBuf().buf.Lines[0] != "" {
+		t.Errorf("inserted line should be empty, got %q", a.currentBuf().buf.Lines[0])
+	}
+	if a.currentBuf().cursorLine != 0 {
+		t.Errorf("cursor should stay at line 0, got %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestGGMotion(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third", "fourth"}
+	a.currentBuf().cursorLine = 2
+	a.currentBuf().cursorCol = 5
+
+	// Press 'g' once.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'g'})
+	if !a.gPending {
+		t.Error("first 'g' should set gPending")
+	}
+
+	// Press 'g' again.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'g'})
+	if a.gPending {
+		t.Error("second 'g' should clear gPending")
+	}
+	if a.currentBuf().cursorLine != 0 {
+		t.Errorf("gg should jump to line 0, got %d", a.currentBuf().cursorLine)
+	}
+	if a.currentBuf().cursorCol != 0 {
+		t.Errorf("gg should move to col 0, got %d", a.currentBuf().cursorCol)
+	}
+}
+
+func TestGGCancellation(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second"}
+	a.currentBuf().cursorLine = 1
+
+	// Press 'g' then something else.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'g'})
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'j'})
+
+	if a.gPending {
+		t.Error("gPending should be cleared by non-g key")
+	}
+	if a.currentBuf().cursorLine != 1 {
+		t.Error("gj should not jump anywhere")
+	}
+}
+
+func TestGMotion(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third", "fourth"}
+	a.currentBuf().cursorLine = 1
+	a.currentBuf().cursorCol = 5
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'G'})
+
+	if a.currentBuf().cursorLine != 3 {
+		t.Errorf("G should jump to last line (3), got %d", a.currentBuf().cursorLine)
+	}
+	if a.currentBuf().cursorCol != 0 {
+		t.Errorf("G should move to col 0, got %d", a.currentBuf().cursorCol)
+	}
+}
+
+func TestYYYank(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
+	a.currentBuf().cursorLine = 1
+
+	// Press 'y' once.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'y'})
+	if !a.yPending {
+		t.Error("first 'y' should set yPending")
+	}
+
+	// Press 'y' again.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'y'})
+	if a.yPending {
+		t.Error("second 'y' should clear yPending")
+	}
+	if a.yankBuffer != "second" {
+		t.Errorf("yankBuffer should be 'second', got %q", a.yankBuffer)
+	}
+	// Lines should be unchanged.
+	if len(a.currentBuf().buf.Lines) != 3 {
+		t.Error("yy should not modify lines")
+	}
+}
+
+func TestYYCancellation(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second"}
+
+	// Press 'y' then something else.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'y'})
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'j'})
+
+	if a.yPending {
+		t.Error("yPending should be cleared by non-y key")
+	}
+	if a.yankBuffer != "" {
+		t.Error("yankBuffer should remain empty after cancelled yy")
+	}
+}
+
+func TestPasteBelow(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second"}
+	a.currentBuf().cursorLine = 0
+	a.yankBuffer = "pasted"
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'p'})
+
+	if len(a.currentBuf().buf.Lines) != 3 {
+		t.Fatalf("expected 3 lines after paste, got %d", len(a.currentBuf().buf.Lines))
+	}
+	if a.currentBuf().buf.Lines[1] != "pasted" {
+		t.Errorf("pasted line should be 'pasted', got %q", a.currentBuf().buf.Lines[1])
+	}
+	if a.currentBuf().cursorLine != 1 {
+		t.Errorf("cursor should move to line 1, got %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestPasteAbove(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second"}
+	a.currentBuf().cursorLine = 1
+	a.yankBuffer = "pasted"
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'P'})
+
+	if len(a.currentBuf().buf.Lines) != 3 {
+		t.Fatalf("expected 3 lines after paste, got %d", len(a.currentBuf().buf.Lines))
+	}
+	if a.currentBuf().buf.Lines[1] != "pasted" {
+		t.Errorf("pasted line should be 'pasted', got %q", a.currentBuf().buf.Lines[1])
+	}
+	if a.currentBuf().buf.Lines[2] != "second" {
+		t.Errorf("original line should be pushed down, got %q", a.currentBuf().buf.Lines[2])
+	}
+	if a.currentBuf().cursorLine != 1 {
+		t.Errorf("cursor should stay at line 1, got %d", a.currentBuf().cursorLine)
+	}
+}
+
+func TestPasteEmptyBuffer(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first"}
+	a.yankBuffer = ""
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'p'})
+
+	// Should be no-op.
+	if len(a.currentBuf().buf.Lines) != 1 {
+		t.Error("paste with empty buffer should be no-op")
+	}
+}
+
+func TestDDPopulatesYankBuffer(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
+	a.currentBuf().cursorLine = 1
+
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+
+	if a.yankBuffer != "second" {
+		t.Errorf("dd should populate yankBuffer, got %q", a.yankBuffer)
+	}
+	if len(a.currentBuf().buf.Lines) != 2 {
+		t.Fatalf("dd should delete line, got %d lines", len(a.currentBuf().buf.Lines))
+	}
+}
+
+func TestDDThenPaste(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
+	a.currentBuf().cursorLine = 1
+
+	// Delete second line with dd.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+
+	// Now paste it back below.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'p'})
+
+	if len(a.currentBuf().buf.Lines) != 3 {
+		t.Fatalf("expected 3 lines after dd+p, got %d", len(a.currentBuf().buf.Lines))
+	}
+	if a.currentBuf().buf.Lines[0] != "first" || a.currentBuf().buf.Lines[1] != "third" || a.currentBuf().buf.Lines[2] != "second" {
+		t.Errorf("unexpected lines after dd+p: %v", a.currentBuf().buf.Lines)
+	}
+}
+
+func TestUndoWithU(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
+	a.currentBuf().cursorLine = 1
+
+	// Delete second line with dd.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+
+	if len(a.currentBuf().buf.Lines) != 2 {
+		t.Fatalf("dd should delete line, got %d lines", len(a.currentBuf().buf.Lines))
+	}
+
+	// Undo with 'u'.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'u'})
+
+	if len(a.currentBuf().buf.Lines) != 3 {
+		t.Fatalf("u should restore deleted line, got %d lines", len(a.currentBuf().buf.Lines))
+	}
+	if a.currentBuf().buf.Lines[1] != "second" {
+		t.Errorf("restored line should be 'second', got %q", a.currentBuf().buf.Lines[1])
+	}
+}
+
+func TestRedoWithCtrlR(t *testing.T) {
+	a := newTestApp("test.txt")
+	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
+	a.currentBuf().cursorLine = 1
+
+	// Delete second line with dd.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+
+	// Undo with 'u'.
+	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'u'})
+
+	if len(a.currentBuf().buf.Lines) != 3 {
+		t.Fatalf("expected 3 lines after undo, got %d", len(a.currentBuf().buf.Lines))
+	}
+
+	// Redo with Ctrl+R.
+	a.handleDefaultKey(Key{Type: KeyCtrlR})
+
+	if len(a.currentBuf().buf.Lines) != 2 {
+		t.Fatalf("Ctrl+R should redo delete, got %d lines", len(a.currentBuf().buf.Lines))
+	}
+	if a.currentBuf().buf.Lines[0] != "first" || a.currentBuf().buf.Lines[1] != "third" {
+		t.Errorf("lines after redo: %v", a.currentBuf().buf.Lines)
+	}
+}

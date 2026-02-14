@@ -206,3 +206,248 @@ func TestUndoDeleteWholeLineSingle(t *testing.T) {
 		t.Errorf("cursor: (%d, %d)", line, col)
 	}
 }
+
+// --- v1.5.0 redo tests ---
+
+func TestRedoInsertChar(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello"}
+	undo := NewUndoStack()
+
+	buf.InsertChar(0, 5, '!')
+	undo.PushInsertChar(0, 5, '!')
+	undo.flushCoalesce()
+
+	// Undo the insert.
+	undo.Undo(buf)
+	if buf.Lines[0] != "hello" {
+		t.Errorf("after undo: %q", buf.Lines[0])
+	}
+
+	// Redo the insert.
+	line, col, ok := undo.Redo(buf)
+	if !ok {
+		t.Fatal("redo should succeed")
+	}
+	if buf.Lines[0] != "hello!" {
+		t.Errorf("after redo: %q", buf.Lines[0])
+	}
+	if line != 0 || col != 6 {
+		t.Errorf("cursor after redo: (%d, %d)", line, col)
+	}
+}
+
+func TestRedoDeleteChar(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello"}
+	undo := NewUndoStack()
+
+	ch, _ := buf.DeleteChar(0, 5)
+	undo.PushDeleteChar(0, 4, ch, 0, 5)
+
+	// Undo the delete.
+	undo.Undo(buf)
+	if buf.Lines[0] != "hello" {
+		t.Errorf("after undo: %q", buf.Lines[0])
+	}
+
+	// Redo the delete.
+	line, col, ok := undo.Redo(buf)
+	if !ok {
+		t.Fatal("redo should succeed")
+	}
+	if buf.Lines[0] != "hell" {
+		t.Errorf("after redo: %q", buf.Lines[0])
+	}
+	if line != 0 || col != 5 {
+		t.Errorf("cursor: (%d, %d)", line, col)
+	}
+}
+
+func TestRedoInsertLine(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"helloworld"}
+	undo := NewUndoStack()
+
+	undo.PushInsertLine(0, 5, 0, 5)
+	buf.InsertNewline(0, 5)
+
+	// Undo the newline insert.
+	undo.Undo(buf)
+	if len(buf.Lines) != 1 || buf.Lines[0] != "helloworld" {
+		t.Errorf("after undo: %v", buf.Lines)
+	}
+
+	// Redo the newline insert.
+	line, col, ok := undo.Redo(buf)
+	if !ok {
+		t.Fatal("redo should succeed")
+	}
+	if len(buf.Lines) != 2 || buf.Lines[0] != "hello" || buf.Lines[1] != "world" {
+		t.Errorf("after redo: %v", buf.Lines)
+	}
+	if line != 1 || col != 0 {
+		t.Errorf("cursor: (%d, %d)", line, col)
+	}
+}
+
+func TestRedoDeleteWholeLine(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"first", "second", "third"}
+	undo := NewUndoStack()
+
+	content := buf.DeleteLine(1)
+	undo.PushDeleteWholeLine(1, content, 1, 0)
+
+	// Undo the delete.
+	undo.Undo(buf)
+	if len(buf.Lines) != 3 || buf.Lines[1] != "second" {
+		t.Errorf("after undo: %v", buf.Lines)
+	}
+
+	// Redo the delete.
+	line, col, ok := undo.Redo(buf)
+	if !ok {
+		t.Fatal("redo should succeed")
+	}
+	if len(buf.Lines) != 2 || buf.Lines[0] != "first" || buf.Lines[1] != "third" {
+		t.Errorf("after redo: %v", buf.Lines)
+	}
+	if line != 1 || col != 0 {
+		t.Errorf("cursor: (%d, %d)", line, col)
+	}
+}
+
+func TestRedoInsertWholeLine(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"first", "second"}
+	undo := NewUndoStack()
+
+	buf.InsertLine(1, "")
+	undo.PushInsertWholeLine(1)
+
+	// Undo the insert.
+	undo.Undo(buf)
+	if len(buf.Lines) != 2 || buf.Lines[0] != "first" || buf.Lines[1] != "second" {
+		t.Errorf("after undo: %v", buf.Lines)
+	}
+
+	// Redo the insert.
+	line, col, ok := undo.Redo(buf)
+	if !ok {
+		t.Fatal("redo should succeed")
+	}
+	if len(buf.Lines) != 3 || buf.Lines[1] != "" {
+		t.Errorf("after redo: %v", buf.Lines)
+	}
+	if line != 1 || col != 0 {
+		t.Errorf("cursor: (%d, %d)", line, col)
+	}
+}
+
+func TestRedoCoalescedInserts(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{""}
+	undo := NewUndoStack()
+
+	// Type "hello" at consecutive positions.
+	for i, ch := range "hello" {
+		buf.InsertChar(0, i, ch)
+		undo.PushInsertChar(0, i, ch)
+	}
+	undo.flushCoalesce()
+
+	// Undo the coalesced insert.
+	undo.Undo(buf)
+	if buf.Lines[0] != "" {
+		t.Errorf("after undo: %q", buf.Lines[0])
+	}
+
+	// Redo the coalesced insert.
+	line, col, ok := undo.Redo(buf)
+	if !ok {
+		t.Fatal("redo should succeed")
+	}
+	if buf.Lines[0] != "hello" {
+		t.Errorf("after redo: %q", buf.Lines[0])
+	}
+	if line != 0 || col != 5 {
+		t.Errorf("cursor: (%d, %d)", line, col)
+	}
+}
+
+func TestRedoEmpty(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello"}
+	undo := NewUndoStack()
+
+	_, _, ok := undo.Redo(buf)
+	if ok {
+		t.Error("redo on empty redo stack should return false")
+	}
+}
+
+func TestRedoStackClearedOnNewOp(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{"hello"}
+	undo := NewUndoStack()
+
+	// Insert a character.
+	buf.InsertChar(0, 5, '!')
+	undo.PushInsertChar(0, 5, '!')
+	undo.flushCoalesce()
+
+	// Undo it.
+	undo.Undo(buf)
+
+	// Insert a new character (should clear redo stack).
+	buf.InsertChar(0, 5, '?')
+	undo.PushInsertChar(0, 5, '?')
+
+	// Try to redo — should fail because redo stack was cleared.
+	_, _, ok := undo.Redo(buf)
+	if ok {
+		t.Error("redo should fail after new operation")
+	}
+}
+
+func TestMultipleUndoRedo(t *testing.T) {
+	buf := NewBuffer("")
+	buf.Lines = []string{""}
+	undo := NewUndoStack()
+
+	// Insert 'a'.
+	buf.InsertChar(0, 0, 'a')
+	undo.PushInsertChar(0, 0, 'a')
+	undo.flushCoalesce()
+
+	// Insert 'b'.
+	buf.InsertChar(0, 1, 'b')
+	undo.PushInsertChar(0, 1, 'b')
+	undo.flushCoalesce()
+
+	// Now: "ab"
+	if buf.Lines[0] != "ab" {
+		t.Fatalf("after inserts: %q", buf.Lines[0])
+	}
+
+	// Undo twice.
+	undo.Undo(buf) // Remove 'b'
+	if buf.Lines[0] != "a" {
+		t.Errorf("after first undo: %q", buf.Lines[0])
+	}
+	undo.Undo(buf) // Remove 'a'
+	if buf.Lines[0] != "" {
+		t.Errorf("after second undo: %q", buf.Lines[0])
+	}
+
+	// Redo twice.
+	undo.Redo(buf) // Restore 'a'
+	if buf.Lines[0] != "a" {
+		t.Errorf("after first redo: %q", buf.Lines[0])
+	}
+	undo.Redo(buf) // Restore 'b'
+	if buf.Lines[0] != "ab" {
+		t.Errorf("after second redo: %q", buf.Lines[0])
+	}
+}
