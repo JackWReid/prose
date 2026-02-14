@@ -1590,7 +1590,7 @@ func (a *App) render() {
 		frame += a.renderer.RenderBrowser(a.browser, a.viewport)
 	}
 
-	os.Stdout.WriteString(frame)
+	os.Stdout.WriteString("\x1b[?2026h" + frame + "\x1b[?2026l")
 }
 
 // toggleSpellCheck toggles spell checking on/off globally.

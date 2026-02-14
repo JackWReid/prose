@@ -117,6 +117,57 @@ func TestRenderFrameTopPadding(t *testing.T) {
 	}
 }
 
+func TestRenderFrameNoFullClear(t *testing.T) {
+	r := NewRenderer()
+	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "hello"}}
+	vp := NewViewport(80, 5)
+
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
+
+	if strings.Contains(frame, "\x1b[2J") {
+		t.Error("frame must not contain full-screen clear (\\x1b[2J)")
+	}
+	if !strings.Contains(frame, "\x1b[H") {
+		t.Error("frame must contain cursor-home (\\x1b[H)")
+	}
+}
+
+func TestRenderFramePerLineErase(t *testing.T) {
+	r := NewRenderer()
+	dls := []DisplayLine{
+		{BufferLine: 0, Offset: 0, Text: "line one"},
+		{BufferLine: 1, Offset: 0, Text: "line two"},
+	}
+	vp := NewViewport(80, 10)
+
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
+
+	// Content lines should be followed by erase-to-end-of-line.
+	if !strings.Contains(frame, "line one\x1b[K") {
+		t.Error("content line should be followed by \\x1b[K")
+	}
+	if !strings.Contains(frame, "line two\x1b[K") {
+		t.Error("content line should be followed by \\x1b[K")
+	}
+}
+
+func TestRenderFrameEmptyRowsCleared(t *testing.T) {
+	r := NewRenderer()
+	// Only 1 content line in a 10-row viewport — empty rows should get \x1b[K.
+	dls := []DisplayLine{{BufferLine: 0, Offset: 0, Text: "only line"}}
+	vp := NewViewport(80, 10)
+
+	frame := r.RenderFrame(dls, vp, 0, 0, 0, " f.txt", "DEFAULT ", PlainHighlighter{}, nil, ModeDefault, -1, -1, false, nil, 0)
+
+	// Count occurrences of erase-to-end-of-line — should appear for every
+	// visible row (content + empty viewport rows).
+	count := strings.Count(frame, "\x1b[K")
+	// At minimum: top padding row + visible content rows + empty rows between content and status bar.
+	if count < 2 {
+		t.Errorf("expected multiple \\x1b[K sequences for line clearing, got %d", count)
+	}
+}
+
 func TestRenderPickerOverlay(t *testing.T) {
 	r := NewRenderer()
 	buffers := []*EditorBuffer{

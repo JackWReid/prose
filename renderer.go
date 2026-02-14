@@ -38,8 +38,8 @@ func (r *Renderer) RenderFrame(
 	// Hide cursor during drawing.
 	r.buf.WriteString("\x1b[?25l")
 
-	// Clear screen and move to top-left.
-	r.buf.WriteString("\x1b[2J\x1b[H")
+	// Move cursor to top-left (no full-screen clear — we erase per line instead).
+	r.buf.WriteString("\x1b[H")
 
 	visibleLines := vp.VisibleLines(scrollOffset)
 	topPadding := 0
@@ -49,6 +49,11 @@ func (r *Renderer) RenderFrame(
 	marginStr := ""
 	if vp.LeftMargin > 0 {
 		marginStr = strings.Repeat(" ", vp.LeftMargin)
+	}
+
+	// Clear top padding row if present.
+	if topPadding > 0 {
+		r.buf.WriteString("\x1b[1;1H\x1b[K")
 	}
 
 	for i := 0; i < visibleLines; i++ {
@@ -74,6 +79,15 @@ func (r *Renderer) RenderFrame(
 			r.buf.WriteString(marginStr)
 			r.buf.WriteString(text)
 		}
+		// Erase to end of line (clears stale content without a full-screen clear).
+		r.buf.WriteString("\x1b[K")
+	}
+
+	// Clear any remaining rows between content and status bar.
+	lastContentRow := visibleLines + topPadding
+	statusRow := vp.Height
+	for row := lastContentRow + 1; row < statusRow; row++ {
+		r.buf.WriteString(fmt.Sprintf("\x1b[%d;1H\x1b[K", row))
 	}
 
 	// Status bar on the last row.
