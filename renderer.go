@@ -425,11 +425,16 @@ func truncateVisibleStr(s string, maxVisible int) string {
 // applySpellHighlighting applies light red background highlighting to misspelled words.
 // It inserts ANSI background codes while preserving existing foreground syntax highlighting.
 func (r *Renderer) applySpellHighlighting(text string, displayLine DisplayLine, spellErrors []SpellError) string {
-	// Find errors that apply to this display line
+	// Find errors that overlap with this display line's character range
+	displayEnd := displayLine.Offset + len([]rune(displayLine.Text))
 	var relevantErrors []SpellError
 	for _, err := range spellErrors {
-		if err.Line == displayLine.BufferLine {
-			relevantErrors = append(relevantErrors, err)
+		if err.Line == displayLine.BufferLine && err.StartCol < displayEnd && err.EndCol > displayLine.Offset {
+			// Clamp to display line bounds and adjust to display-relative columns
+			adjusted := err
+			adjusted.StartCol = max(err.StartCol, displayLine.Offset) - displayLine.Offset
+			adjusted.EndCol = min(err.EndCol, displayEnd) - displayLine.Offset
+			relevantErrors = append(relevantErrors, adjusted)
 		}
 	}
 
@@ -506,18 +511,23 @@ func (r *Renderer) applySearchHighlighting(text string, displayLine DisplayLine,
 		return text
 	}
 
-	// Find matches that apply to this display line
+	// Find matches that overlap with this display line's character range
+	displayEnd := displayLine.Offset + len([]rune(displayLine.Text))
 	var relevantMatches []struct {
 		match     SearchMatch
 		isCurrent bool
 	}
 	for i, match := range searchMatches {
-		if match.Line == displayLine.BufferLine {
+		if match.Line == displayLine.BufferLine && match.StartCol < displayEnd && match.EndCol > displayLine.Offset {
+			// Clamp to display line bounds and adjust to display-relative columns
+			adjusted := match
+			adjusted.StartCol = max(match.StartCol, displayLine.Offset) - displayLine.Offset
+			adjusted.EndCol = min(match.EndCol, displayEnd) - displayLine.Offset
 			relevantMatches = append(relevantMatches, struct {
 				match     SearchMatch
 				isCurrent bool
 			}{
-				match:     match,
+				match:     adjusted,
 				isCurrent: i == searchCurrentIdx,
 			})
 		}

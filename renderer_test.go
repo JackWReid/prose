@@ -200,6 +200,89 @@ func TestRenderPickerOverlay(t *testing.T) {
 	}
 }
 
+func TestApplySpellHighlightingWithOffset(t *testing.T) {
+	r := NewRenderer()
+
+	// Simulate a buffer line "hello world test" wrapped into two display lines:
+	// Display line 0: "hello world " (offset 0)
+	// Display line 1: "test" (offset 12)
+	// Spell error on "test" at columns 12-16 in the buffer line.
+
+	dl := DisplayLine{BufferLine: 0, Offset: 12, Text: "test"}
+	errors := []SpellError{{Line: 0, StartCol: 12, EndCol: 16, Word: "test"}}
+
+	result := r.applySpellHighlighting(dl.Text, dl, errors)
+
+	// The highlight should start at column 0 of the display line text
+	if !strings.Contains(result, "\x1b[38;5;0m\x1b[48;5;224m") {
+		t.Error("spell highlight should be applied to wrapped display line")
+	}
+	// Should contain the reset
+	if !strings.Contains(result, "\x1b[39m\x1b[49m") {
+		t.Error("spell highlight should be closed")
+	}
+}
+
+func TestApplySpellHighlightingNoBleed(t *testing.T) {
+	r := NewRenderer()
+
+	// Spell error on "world" at columns 6-11 in buffer line.
+	// Display line 1 starts at offset 12, so the error should NOT appear here.
+	dl := DisplayLine{BufferLine: 0, Offset: 12, Text: "test"}
+	errors := []SpellError{{Line: 0, StartCol: 6, EndCol: 11, Word: "world"}}
+
+	result := r.applySpellHighlighting(dl.Text, dl, errors)
+
+	if strings.Contains(result, "\x1b[48;5;224m") {
+		t.Error("spell highlight should not bleed onto a different display line")
+	}
+}
+
+func TestApplySearchHighlightingWithOffset(t *testing.T) {
+	r := NewRenderer()
+
+	dl := DisplayLine{BufferLine: 0, Offset: 12, Text: "test"}
+	matches := []SearchMatch{{Line: 0, StartCol: 12, EndCol: 16}}
+
+	result := r.applySearchHighlighting(dl.Text, dl, true, matches, 0)
+
+	// Current match highlight (bright yellow)
+	if !strings.Contains(result, "\x1b[38;5;0m\x1b[48;5;226m") {
+		t.Error("search highlight should be applied to wrapped display line")
+	}
+	if !strings.Contains(result, "\x1b[39m\x1b[49m") {
+		t.Error("search highlight should be closed")
+	}
+}
+
+func TestApplySearchHighlightingNoBleed(t *testing.T) {
+	r := NewRenderer()
+
+	// Search match at columns 0-5 in buffer line, but display line starts at offset 12
+	dl := DisplayLine{BufferLine: 0, Offset: 12, Text: "test"}
+	matches := []SearchMatch{{Line: 0, StartCol: 0, EndCol: 5}}
+
+	result := r.applySearchHighlighting(dl.Text, dl, true, matches, 0)
+
+	if strings.Contains(result, "\x1b[48;5;226m") || strings.Contains(result, "\x1b[48;5;229m") {
+		t.Error("search highlight should not bleed onto a different display line")
+	}
+}
+
+func TestApplySpellHighlightingFirstDisplayLine(t *testing.T) {
+	r := NewRenderer()
+
+	// Error on first display line (offset 0) should still work
+	dl := DisplayLine{BufferLine: 0, Offset: 0, Text: "hello world"}
+	errors := []SpellError{{Line: 0, StartCol: 6, EndCol: 11, Word: "world"}}
+
+	result := r.applySpellHighlighting(dl.Text, dl, errors)
+
+	if !strings.Contains(result, "\x1b[38;5;0m\x1b[48;5;224m") {
+		t.Error("spell highlight should work on first display line")
+	}
+}
+
 func TestRenderPickerDirtyIndicator(t *testing.T) {
 	r := NewRenderer()
 	buffers := []*EditorBuffer{

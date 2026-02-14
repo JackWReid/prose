@@ -61,4 +61,7 @@
 - Spellcheck is off by default and is toggled with `:spell`
 
 ## 1.14
-- TBD
+- Fix rendering flicker during rapid key presses
+
+## 1.15
+- Fix text highlights (spellcheck and search) bleeding across soft-wrapped lines
