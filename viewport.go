@@ -1,6 +1,6 @@
 package main
 
-const ColumnWidth = 60
+var DefaultColumnWidth = 60
 
 // DisplayLine represents one visual line on screen, mapped back to its source.
 type DisplayLine struct {
@@ -10,10 +10,10 @@ type DisplayLine struct {
 }
 
 // WrapLine soft-wraps a single hard line into display lines at word boundaries.
-// maxWidth is the column width (typically ColumnWidth).
+// maxWidth is the column width (typically DefaultColumnWidth).
 func WrapLine(line string, maxWidth int, bufferLine int) []DisplayLine {
 	if maxWidth <= 0 {
-		maxWidth = ColumnWidth
+		maxWidth = DefaultColumnWidth
 	}
 	runes := []rune(line)
 	if len(runes) == 0 {
@@ -76,25 +76,31 @@ func WrapBuffer(buf *Buffer, maxWidth int) []DisplayLine {
 
 // Viewport manages the visible window into the display lines.
 type Viewport struct {
-	Width      int // Terminal width
-	Height     int // Terminal height (status bar uses 1 row, so visible = Height-1)
-	ColWidth   int // Text column width (capped at ColumnWidth or terminal width)
-	LeftMargin int // Left margin for centring
+	Width        int // Terminal width
+	Height       int // Terminal height (status bar uses 1 row, so visible = Height-1)
+	ColWidth     int // Text column width (capped at TargetColWidth or terminal width)
+	LeftMargin   int // Left margin for centring
+	TargetColWidth int // User-adjustable target column width
 }
 
 func NewViewport(termWidth, termHeight int) *Viewport {
 	v := &Viewport{
-		Width:  termWidth,
-		Height: termHeight,
+		Width:          termWidth,
+		Height:         termHeight,
+		TargetColWidth: DefaultColumnWidth,
 	}
 	v.recalcLayout()
 	return v
 }
 
 func (v *Viewport) recalcLayout() {
-	if v.Width >= ColumnWidth {
-		v.ColWidth = ColumnWidth
-		v.LeftMargin = (v.Width - ColumnWidth) / 2
+	target := v.TargetColWidth
+	if target <= 0 {
+		target = DefaultColumnWidth
+	}
+	if v.Width >= target {
+		v.ColWidth = target
+		v.LeftMargin = (v.Width - target) / 2
 	} else {
 		v.ColWidth = v.Width
 		v.LeftMargin = 0

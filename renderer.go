@@ -231,6 +231,23 @@ func (r *Renderer) RenderBrowser(browser *Browser, vp *Viewport) string {
 	)
 }
 
+// RenderColumnAdjust renders the column width adjustment overlay centred on screen.
+func (r *Renderer) RenderColumnAdjust(ca *ColumnAdjust, vp *Viewport) string {
+	display := fmt.Sprintf("← %d →", ca.Width)
+	items := []OverlayItem{
+		{DisplayText: display, RawText: display},
+	}
+
+	return r.RenderOverlay(
+		"Column Width",
+		"Space--",
+		items,
+		0,
+		vp,
+		OverlayScrollInfo{},
+	)
+}
+
 // OverlayItem represents a single item in an overlay list.
 type OverlayItem struct {
 	DisplayText string // The text to show (may contain ANSI codes)

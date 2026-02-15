@@ -28,6 +28,7 @@ type App struct {
 	picker           *Picker
 	outline          *Outline
 	browser          *Browser
+	columnAdjust     *ColumnAdjust
 	spellChecker     *SpellChecker
 	spellCheckEnabled bool // Global toggle for spell checking (default: false).
 	mode             Mode
@@ -55,6 +56,7 @@ func NewApp(filenames []string) *App {
 		picker:            &Picker{},
 		outline:           &Outline{},
 		browser:           &Browser{},
+		columnAdjust:      &ColumnAdjust{},
 		mode:              ModeDefault,
 		spellCheckEnabled: false, // Spellcheck is off by default.
 	}
@@ -151,6 +153,12 @@ func (a *App) handleInput(event InputEvent) {
 	// Handle keyboard events.
 	key := event.Key
 
+	// If column adjuster is active, handle it first.
+	if a.columnAdjust.Active {
+		a.handleColumnAdjustKey(key)
+		return
+	}
+
 	// If outline is active, handle it first.
 	if a.outline.Active {
 		a.handleOutlineKey(key)
@@ -186,8 +194,8 @@ func (a *App) handleInput(event InputEvent) {
 }
 
 func (a *App) handleMouse(mouse MouseEvent) {
-	// Ignore mouse events when outline, picker, browser, or prompt is active.
-	if a.outline.Active || a.picker.Active || a.browser.Active || a.statusBar.Prompt != PromptNone {
+	// Ignore mouse events when overlay or prompt is active.
+	if a.columnAdjust.Active || a.outline.Active || a.picker.Active || a.browser.Active || a.statusBar.Prompt != PromptNone {
 		return
 	}
 
@@ -230,6 +238,9 @@ func (a *App) handleDefaultKey(key Key) {
 				return
 			case 'o', 'O':
 				a.showBrowser()
+				return
+			case '-':
+				a.showColumnAdjust()
 				return
 			}
 		}
@@ -588,6 +599,42 @@ func (a *App) showBrowser() {
 	if len(a.browser.Items) == 0 {
 		a.statusBar.SetMessage("Directory is empty")
 		a.browser.Hide()
+	}
+}
+
+func (a *App) showColumnAdjust() {
+	a.columnAdjust.Show(a.viewport.TargetColWidth)
+}
+
+func (a *App) handleColumnAdjustKey(key Key) {
+	switch key.Type {
+	case KeyEscape:
+		// Cancel — restore original width.
+		a.viewport.TargetColWidth = a.columnAdjust.OrigWidth
+		a.viewport.recalcLayout()
+		a.columnAdjust.Hide()
+	case KeyEnter:
+		// Confirm — keep current width.
+		a.columnAdjust.Hide()
+	case KeyLeft:
+		a.columnAdjust.Decrease()
+		a.viewport.TargetColWidth = a.columnAdjust.Width
+		a.viewport.recalcLayout()
+	case KeyRight:
+		a.columnAdjust.Increase(a.viewport.Width)
+		a.viewport.TargetColWidth = a.columnAdjust.Width
+		a.viewport.recalcLayout()
+	case KeyRune:
+		switch key.Rune {
+		case 'h':
+			a.columnAdjust.Decrease()
+			a.viewport.TargetColWidth = a.columnAdjust.Width
+			a.viewport.recalcLayout()
+		case 'l':
+			a.columnAdjust.Increase(a.viewport.Width)
+			a.viewport.TargetColWidth = a.columnAdjust.Width
+			a.viewport.recalcLayout()
+		}
 	}
 }
 
@@ -1588,6 +1635,11 @@ func (a *App) render() {
 	// Render browser overlay if active.
 	if a.browser.Active {
 		frame += a.renderer.RenderBrowser(a.browser, a.viewport)
+	}
+
+	// Render column adjuster overlay if active.
+	if a.columnAdjust.Active {
+		frame += a.renderer.RenderColumnAdjust(a.columnAdjust, a.viewport)
 	}
 
 	os.Stdout.WriteString("\x1b[?2026h" + frame + "\x1b[?2026l")
