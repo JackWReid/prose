@@ -68,3 +68,6 @@
 
 ## 1.16
 - Reduce content column width from 100 to 60 characters
+
+# 1.17
+- Column adjust overlay. <Space--> (space + hyphen) to open a picker-style overlay window. With the overlay window open, the user can press the left and right arrows to update the column width live in the background. Enter to confirm, Esc to cancel. Column width isn't persisted outside of app. Default column width of 60 characters stands.
