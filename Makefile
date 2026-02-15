@@ -25,6 +25,13 @@ install: build
 	@echo "Binary: $(DESTDIR)$(BINDIR)/$(BINARY)"
 	@echo "Man page: $(DESTDIR)$(MANDIR)/prose.1"
 
+# Install just the man page (useful when binary is installed via go install)
+install-man:
+	@echo "Installing man page to $(DESTDIR)$(MANDIR)..."
+	mkdir -p $(DESTDIR)$(MANDIR)
+	install -m 0644 prose.1 $(DESTDIR)$(MANDIR)/prose.1
+	@echo "Man page installed: $(DESTDIR)$(MANDIR)/prose.1"
+
 # Uninstall prose binary and man page
 uninstall:
 	@echo "Uninstalling $(BINARY)..."
@@ -51,7 +58,8 @@ run: build
 help:
 	@echo "prose Makefile targets:"
 	@echo "  make build      - Build the prose binary"
-	@echo "  make install    - Install prose binary and man page (default PREFIX=/usr/local)"
+	@echo "  make install      - Install prose binary and man page (default PREFIX=/usr/local)"
+	@echo "  make install-man  - Install just the man page (for use with go install)"
 	@echo "  make uninstall  - Remove installed prose binary and man page"
 	@echo "  make clean      - Remove build artifacts"
 	@echo "  make test       - Run all tests"
@@ -69,4 +77,4 @@ help:
 	@echo "  make install PREFIX=~/.local"
 	@echo "  make install DESTDIR=/tmp/staging PREFIX=/usr"
 
-.PHONY: build install uninstall clean test run help
+.PHONY: build install install-man uninstall clean test run help
