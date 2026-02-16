@@ -1606,6 +1606,13 @@ func (a *App) render() {
 
 	a.viewport.EnsureCursorVisible(cursorDL, &eb.scrollOffset)
 
+	// When the cursor is on the last buffer line, ensure the end of the file
+	// is visible. Without this, a long last line that wraps to multiple display
+	// lines would leave the wrapped parts hidden below the viewport.
+	if eb.cursorLine == eb.buf.LineCount()-1 {
+		a.viewport.EnsureEndOfFileVisible(len(displayLines), cursorDL, &eb.scrollOffset)
+	}
+
 	bufferInfo := ""
 	if len(a.buffers) > 1 {
 		bufferInfo = formatBufferInfo(a.currentBuffer+1, len(a.buffers))

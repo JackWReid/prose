@@ -199,6 +199,141 @@ func TestViewportResize(t *testing.T) {
 	}
 }
 
+func TestJumpToBottomShowsEndOfFile(t *testing.T) {
+	// Reproduce: file with long last line that wraps to multiple display lines.
+	// When pressing G (jumpToBottom), cursorCol=0 maps to the FIRST display line
+	// of the last buffer line. The wrapped continuation is hidden below the viewport.
+	buf := NewBuffer("")
+	// Create a file with short lines followed by a very long last line.
+	buf.Lines = make([]string, 20)
+	for i := 0; i < 19; i++ {
+		buf.Lines[i] = "Short line."
+	}
+	// Last line is ~360 chars — wraps to ~6 display lines at width 60.
+	buf.Lines[19] = "A system that removes binding criteria, deletes the mechanical link between criteria and rating, and leaves the translation to managerial judgment is a system designed to be unreviewable. It may not use the words free discretion but it achieves the same structural result and the BAG has held that result to be impermissible under German labour law."
+
+	colWidth := 60
+	displayLines := WrapBuffer(buf, colWidth)
+
+	// Verify the last line wraps to multiple display lines.
+	lastLineDLs := 0
+	for _, dl := range displayLines {
+		if dl.BufferLine == 19 {
+			lastLineDLs++
+		}
+	}
+	if lastLineDLs < 2 {
+		t.Fatalf("expected last line to wrap to multiple display lines, got %d", lastLineDLs)
+	}
+
+	// Simulate G: cursor goes to last buffer line, col 0.
+	cursorLine := 19
+	cursorCol := 0
+	cursorDL, _ := CursorToDisplayLine(displayLines, cursorLine, cursorCol)
+
+	// Simulate viewport with height 15 (small enough that wraps extend past viewport).
+	vp := NewViewport(120, 15)
+	vp.TargetColWidth = colWidth
+	vp.recalcLayout()
+	scrollOffset := 0
+
+	// EnsureCursorVisible adjusts scroll, then EnsureEndOfFileVisible
+	// ensures the end of the file is shown (matching render() logic).
+	vp.EnsureCursorVisible(cursorDL, &scrollOffset)
+	vp.EnsureEndOfFileVisible(len(displayLines), cursorDL, &scrollOffset)
+
+	// The last display line of the file must be visible.
+	lastDisplayLine := len(displayLines) - 1
+	vis := vp.VisibleLines(scrollOffset)
+
+	visibleStart := scrollOffset
+	visibleEnd := scrollOffset + vis - 1
+
+	if lastDisplayLine > visibleEnd {
+		t.Errorf("bottom of file unreachable: last display line %d not visible (visible range %d-%d, cursor at display line %d)",
+			lastDisplayLine, visibleStart, visibleEnd, cursorDL)
+	}
+
+	// Cursor must still be visible.
+	if cursorDL < visibleStart || cursorDL > visibleEnd {
+		t.Errorf("cursor not visible: display line %d not in visible range %d-%d",
+			cursorDL, visibleStart, visibleEnd)
+	}
+}
+
+func TestScrollDownShowsEndOfLastWrappedLine(t *testing.T) {
+	// When cursor is on the last buffer line and that line wraps,
+	// the end of file should be visible (viewport large enough to fit it).
+	buf := NewBuffer("")
+	buf.Lines = []string{
+		"First line of the document.",
+		"Second line with some content.",
+		"Third line here.",
+		"A moderately long paragraph that wraps to about three display lines at this column width setting for test.",
+	}
+
+	colWidth := 40
+	displayLines := WrapBuffer(buf, colWidth)
+	lastDL := len(displayLines) - 1
+
+	// Cursor at last buffer line, col 0.
+	cursorDL, _ := CursorToDisplayLine(displayLines, 3, 0)
+
+	// Viewport large enough to show cursor + wrapped parts.
+	vp := NewViewport(80, 10)
+	vp.TargetColWidth = colWidth
+	vp.recalcLayout()
+	scrollOffset := 0
+
+	vp.EnsureCursorVisible(cursorDL, &scrollOffset)
+	vp.EnsureEndOfFileVisible(len(displayLines), cursorDL, &scrollOffset)
+
+	vis := vp.VisibleLines(scrollOffset)
+	visibleEnd := scrollOffset + vis - 1
+
+	if lastDL > visibleEnd {
+		t.Errorf("end of wrapped last line not visible: last display line %d, visible end %d (cursor display line %d)",
+			lastDL, visibleEnd, cursorDL)
+	}
+
+	// Cursor must still be visible.
+	if cursorDL < scrollOffset || cursorDL > visibleEnd {
+		t.Errorf("cursor not visible: display line %d not in visible range %d-%d",
+			cursorDL, scrollOffset, visibleEnd)
+	}
+}
+
+func TestEndOfFileVisiblePreservesCursorWhenViewportTooSmall(t *testing.T) {
+	// When the last line wraps to more display lines than the viewport can show,
+	// cursor visibility takes priority over showing the end of file.
+	buf := NewBuffer("")
+	buf.Lines = []string{
+		"A very long paragraph that contains many words and should wrap to several display lines when the column width is set to a small value like thirty characters for testing purposes here.",
+	}
+
+	colWidth := 30
+	displayLines := WrapBuffer(buf, colWidth)
+
+	cursorDL, _ := CursorToDisplayLine(displayLines, 0, 0)
+
+	// Very small viewport: can't fit all wrapped lines.
+	vp := NewViewport(80, 4)
+	vp.TargetColWidth = colWidth
+	vp.recalcLayout()
+	scrollOffset := 0
+
+	vp.EnsureCursorVisible(cursorDL, &scrollOffset)
+	vp.EnsureEndOfFileVisible(len(displayLines), cursorDL, &scrollOffset)
+
+	vis := vp.VisibleLines(scrollOffset)
+
+	// Cursor must remain visible even if end of file can't be shown.
+	if cursorDL < scrollOffset || cursorDL >= scrollOffset+vis {
+		t.Errorf("cursor not visible: display line %d not in visible range %d-%d",
+			cursorDL, scrollOffset, scrollOffset+vis-1)
+	}
+}
+
 func formatDLs(dls []DisplayLine) []string {
 	var out []string
 	for _, dl := range dls {

@@ -125,6 +125,34 @@ func (v *Viewport) VisibleLines(scrollOffset int) int {
 	return vis
 }
 
+// EnsureEndOfFileVisible adjusts scrollOffset to show the end of the file
+// when the cursor is near the bottom and the last display line would otherwise
+// be hidden below the viewport (e.g. because the last buffer line wraps).
+// Only adjusts if the cursor remains visible at the new offset.
+func (v *Viewport) EnsureEndOfFileVisible(totalDisplayLines int, cursorDisplayLine int, scrollOffset *int) {
+	lastDL := totalDisplayLines - 1
+	vis := v.VisibleLines(*scrollOffset)
+	if lastDL < *scrollOffset+vis {
+		return // Already visible.
+	}
+	// Scroll down to put lastDL at the bottom. Since we're scrolling down
+	// past the initial position, scrollOffset will be > 0, giving us
+	// the full Height-1 visible lines.
+	newVis := v.Height - 1
+	if newVis <= 0 {
+		return
+	}
+	newOffset := lastDL - newVis + 1
+	if newOffset < 0 {
+		newOffset = 0
+		newVis = v.VisibleLines(0)
+	}
+	// Only apply if cursor remains visible at the new offset.
+	if cursorDisplayLine >= newOffset && cursorDisplayLine < newOffset+newVis {
+		*scrollOffset = newOffset
+	}
+}
+
 // EnsureCursorVisible adjusts scrollOffset so the given display line is visible.
 func (v *Viewport) EnsureCursorVisible(displayLine int, scrollOffset *int) {
 	vis := v.VisibleLines(*scrollOffset)
