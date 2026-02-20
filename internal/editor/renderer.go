@@ -300,7 +300,7 @@ func (r *Renderer) RenderOverlay(
 	if innerWidth < len(titleText)+2 {
 		innerWidth = len(titleText) + 2
 	}
-	boxWidth := innerWidth + 2 // +2 for left/right borders
+	boxWidth := innerWidth + 2  // +2 for left/right borders
 	boxHeight := len(items) + 2 // +2 for top/bottom borders
 
 	// Centre the box.
@@ -318,7 +318,7 @@ func (r *Renderer) RenderOverlay(
 	if dashCount < 0 {
 		dashCount = 0
 	}
-	topLine := titleText + strings.Repeat("─", dashCount + 1) + "╮"
+	topLine := titleText + strings.Repeat("─", dashCount+1) + "╮"
 	b.WriteString(fmt.Sprintf("\x1b[%d;%dH%s", startRow, startCol+1, topLine))
 
 	// Item rows.
@@ -331,7 +331,7 @@ func (r *Renderer) RenderOverlay(
 
 		// Calculate padding using visibleLen to account for ANSI codes.
 		visibleWidth := visibleLen(item.DisplayText)
-		padding := innerWidth - 4 - visibleWidth - 2  // -2 for the explicit spaces before right border
+		padding := innerWidth - 4 - visibleWidth - 2 // -2 for the explicit spaces before right border
 		if padding < 0 {
 			padding = 0
 		}
@@ -464,9 +464,9 @@ func (r *Renderer) applySpellHighlighting(text string, displayLine DisplayLine, 
 	// Parse the text to track ANSI codes and real character positions
 	runes := []rune(text)
 	var result strings.Builder
-	realCol := 0        // Real character position (excluding ANSI codes)
-	i := 0              // Current index in runes
-	inANSI := false     // Whether we're inside an ANSI escape sequence
+	realCol := 0                       // Real character position (excluding ANSI codes)
+	i := 0                             // Current index in runes
+	inANSI := false                    // Whether we're inside an ANSI escape sequence
 	activeErrors := make(map[int]bool) // Track which errors are currently highlighted
 
 	for i < len(runes) {
@@ -559,9 +559,9 @@ func (r *Renderer) applySearchHighlighting(text string, displayLine DisplayLine,
 	// Parse the text to track ANSI codes and real character positions
 	runes := []rune(text)
 	var result strings.Builder
-	realCol := 0                         // Real character position (excluding ANSI codes)
-	i := 0                               // Current index in runes
-	inANSI := false                      // Whether we're inside an ANSI escape sequence
+	realCol := 0                        // Real character position (excluding ANSI codes)
+	i := 0                              // Current index in runes
+	inANSI := false                     // Whether we're inside an ANSI escape sequence
 	activeMatches := make(map[int]bool) // Track which matches are currently highlighted
 
 	for i < len(runes) {

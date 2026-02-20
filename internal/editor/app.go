@@ -24,17 +24,17 @@ type App struct {
 	buffers       []*EditorBuffer
 	currentBuffer int
 
-	viewport         *Viewport
-	renderer         *Renderer
-	statusBar        *StatusBar
-	terminal         *terminal.Terminal
-	picker           *Picker
-	outline          *Outline
-	browser          *Browser
-	columnAdjust     *ColumnAdjust
-	spellChecker     *spell.SpellChecker
+	viewport          *Viewport
+	renderer          *Renderer
+	statusBar         *StatusBar
+	terminal          *terminal.Terminal
+	picker            *Picker
+	outline           *Outline
+	browser           *Browser
+	columnAdjust      *ColumnAdjust
+	spellChecker      *spell.SpellChecker
 	spellCheckEnabled bool // Global toggle for spell checking (default: false).
-	mode             Mode
+	mode              Mode
 
 	leaderPending    bool   // Space was pressed, awaiting second key.
 	dPending         bool   // 'd' was pressed, awaiting second 'd' for dd.

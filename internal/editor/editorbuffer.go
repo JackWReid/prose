@@ -19,9 +19,9 @@ type EditorBuffer struct {
 	isScratch    bool // True if this is the session scratch buffer
 
 	// Spell checking state
-	spellErrors       []spell.SpellError  // Cached spell errors
-	spellCheckPending bool          // Debounce flag
-	lastEdit          time.Time     // Last edit timestamp
+	spellErrors       []spell.SpellError // Cached spell errors
+	spellCheckPending bool               // Debounce flag
+	lastEdit          time.Time          // Last edit timestamp
 
 	// Search state
 	searchActive     bool

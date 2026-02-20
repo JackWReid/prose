@@ -78,7 +78,7 @@ func TestSpellCheckIntegration(t *testing.T) {
 // TestSpellCheckFileTypes verifies that only .md and .txt files are spell checked
 func TestSpellCheckFileTypes(t *testing.T) {
 	tests := []struct {
-		filename     string
+		filename    string
 		shouldCheck bool
 	}{
 		{"test.md", true},

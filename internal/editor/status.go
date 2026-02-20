@@ -12,9 +12,9 @@ type PromptType int
 
 const (
 	PromptNone    PromptType = iota
-	PromptSaveNew                    // "Save as: " for unnamed buffer on first save
-	PromptCommand                    // ":" command input
-	PromptSearch                     // "/" search input
+	PromptSaveNew            // "Save as: " for unnamed buffer on first save
+	PromptCommand            // ":" command input
+	PromptSearch             // "/" search input
 )
 
 // StatusBar generates status bar text and handles prompt state.

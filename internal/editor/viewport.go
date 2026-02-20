@@ -76,10 +76,10 @@ func WrapBuffer(buf *Buffer, maxWidth int) []DisplayLine {
 
 // Viewport manages the visible window into the display lines.
 type Viewport struct {
-	Width        int // Terminal width
-	Height       int // Terminal height (status bar uses 1 row, so visible = Height-1)
-	ColWidth     int // Text column width (capped at TargetColWidth or terminal width)
-	LeftMargin   int // Left margin for centring
+	Width          int // Terminal width
+	Height         int // Terminal height (status bar uses 1 row, so visible = Height-1)
+	ColWidth       int // Text column width (capped at TargetColWidth or terminal width)
+	LeftMargin     int // Left margin for centring
 	TargetColWidth int // User-adjustable target column width
 }
 
