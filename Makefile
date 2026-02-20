@@ -8,10 +8,13 @@ MANDIR ?= $(PREFIX)/share/man/man1
 # Binary name
 BINARY := prose
 
+# Read version from VERSION file
+VERSION := $(shell cat VERSION)
+
 # Build the prose binary
 build:
-	@echo "Building $(BINARY)..."
-	go build -o $(BINARY) .
+	@echo "Building $(BINARY) v$(VERSION)..."
+	go build -ldflags "-X main.Version=$(VERSION)" -o $(BINARY) ./cmd/prose/
 	@echo "Build complete: $(BINARY)"
 
 # Install prose binary and man page
@@ -57,20 +60,20 @@ run: build
 # Show help
 help:
 	@echo "prose Makefile targets:"
-	@echo "  make build      - Build the prose binary"
+	@echo "  make build        - Build the prose binary"
 	@echo "  make install      - Install prose binary and man page (default PREFIX=/usr/local)"
 	@echo "  make install-man  - Install just the man page (for use with go install)"
-	@echo "  make uninstall  - Remove installed prose binary and man page"
-	@echo "  make clean      - Remove build artifacts"
-	@echo "  make test       - Run all tests"
-	@echo "  make run        - Build and run prose"
-	@echo "  make help       - Show this help message"
+	@echo "  make uninstall    - Remove installed prose binary and man page"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make test         - Run all tests"
+	@echo "  make run          - Build and run prose"
+	@echo "  make help         - Show this help message"
 	@echo ""
 	@echo "Variables:"
-	@echo "  PREFIX          - Installation prefix (default: /usr/local)"
-	@echo "  BINDIR          - Binary installation directory (default: PREFIX/bin)"
-	@echo "  MANDIR          - Man page installation directory (default: PREFIX/share/man/man1)"
-	@echo "  DESTDIR         - Staging directory for package builds"
+	@echo "  PREFIX            - Installation prefix (default: /usr/local)"
+	@echo "  BINDIR            - Binary installation directory (default: PREFIX/bin)"
+	@echo "  MANDIR            - Man page installation directory (default: PREFIX/share/man/man1)"
+	@echo "  DESTDIR           - Staging directory for package builds"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make install PREFIX=/usr/local"
