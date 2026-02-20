@@ -1,9 +1,11 @@
-package main
+package editor
 
 import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/JackWReid/prose/internal/spell"
 )
 
 // EditorBuffer holds all per-buffer state: text, undo history, cursor, scroll, and highlighter.
@@ -17,7 +19,7 @@ type EditorBuffer struct {
 	isScratch    bool // True if this is the session scratch buffer
 
 	// Spell checking state
-	spellErrors       []SpellError  // Cached spell errors
+	spellErrors       []spell.SpellError  // Cached spell errors
 	spellCheckPending bool          // Debounce flag
 	lastEdit          time.Time     // Last edit timestamp
 
@@ -90,7 +92,7 @@ func (eb *EditorBuffer) ScheduleSpellCheck() {
 
 // PerformSpellCheck runs spell checking if enough time has elapsed since the last edit.
 // This implements debouncing to avoid checking on every keystroke.
-func (eb *EditorBuffer) PerformSpellCheck(spellChecker *SpellChecker) {
+func (eb *EditorBuffer) PerformSpellCheck(spellChecker *spell.SpellChecker) {
 	if !eb.spellCheckPending {
 		return
 	}

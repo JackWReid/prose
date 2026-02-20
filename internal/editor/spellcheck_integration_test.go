@@ -1,13 +1,15 @@
-package main
+package editor
 
 import (
 	"testing"
+
+	"github.com/JackWReid/prose/internal/spell"
 )
 
 // TestSpellCheckIntegration verifies the end-to-end spell checking flow
 func TestSpellCheckIntegration(t *testing.T) {
 	// Initialize spell checker
-	sc, err := NewSpellChecker()
+	sc, err := spell.NewSpellChecker()
 	if err != nil {
 		t.Fatalf("Failed to initialize spell checker: %v", err)
 	}
@@ -100,7 +102,7 @@ func TestSpellCheckFileTypes(t *testing.T) {
 
 // TestSpellCheckDebounce verifies that spell checking is debounced
 func TestSpellCheckDebounce(t *testing.T) {
-	sc, err := NewSpellChecker()
+	sc, err := spell.NewSpellChecker()
 	if err != nil {
 		t.Fatalf("Failed to initialize spell checker: %v", err)
 	}
@@ -126,7 +128,7 @@ func TestSpellCheckDebounce(t *testing.T) {
 
 // TestSpellCheckBritishSpellings verifies British English spellings are accepted
 func TestSpellCheckBritishSpellings(t *testing.T) {
-	sc, err := NewSpellChecker()
+	sc, err := spell.NewSpellChecker()
 	if err != nil {
 		t.Fatalf("Failed to initialize spell checker: %v", err)
 	}
@@ -146,7 +148,7 @@ func TestSpellCheckBritishSpellings(t *testing.T) {
 
 // TestSpellCheckShortWords verifies that short words (1-2 letters) are skipped
 func TestSpellCheckShortWords(t *testing.T) {
-	sc, err := NewSpellChecker()
+	sc, err := spell.NewSpellChecker()
 	if err != nil {
 		t.Fatalf("Failed to initialize spell checker: %v", err)
 	}
@@ -160,7 +162,7 @@ func TestSpellCheckShortWords(t *testing.T) {
 
 // TestSpellCheckContractions verifies contractions work correctly
 func TestSpellCheckContractions(t *testing.T) {
-	sc, err := NewSpellChecker()
+	sc, err := spell.NewSpellChecker()
 	if err != nil {
 		t.Fatalf("Failed to initialize spell checker: %v", err)
 	}

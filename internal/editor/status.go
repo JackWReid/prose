@@ -1,8 +1,10 @@
-package main
+package editor
 
 import (
 	"fmt"
 	"path/filepath"
+
+	"github.com/JackWReid/prose/internal/terminal"
 )
 
 // PromptType indicates what kind of prompt is active.
@@ -141,22 +143,22 @@ func truncatePathScratch(filename string, isScratch bool) string {
 
 // HandlePromptKey processes a keypress during an active prompt.
 // Returns (input string, done bool, cancelled bool).
-func (s *StatusBar) HandlePromptKey(key Key) (string, bool, bool) {
+func (s *StatusBar) HandlePromptKey(key terminal.Key) (string, bool, bool) {
 	switch key.Type {
-	case KeyEscape:
+	case terminal.KeyEscape:
 		s.ClearPrompt()
 		return "", false, true
-	case KeyEnter:
+	case terminal.KeyEnter:
 		text := s.PromptText
 		s.ClearPrompt()
 		return text, true, false
-	case KeyBackspace:
+	case terminal.KeyBackspace:
 		if len(s.PromptText) > 0 {
 			runes := []rune(s.PromptText)
 			s.PromptText = string(runes[:len(runes)-1])
 		}
 		return "", false, false
-	case KeyRune:
+	case terminal.KeyRune:
 		s.PromptText += string(key.Rune)
 		return "", false, false
 	}

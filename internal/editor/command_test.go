@@ -1,10 +1,12 @@
-package main
+package editor
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/JackWReid/prose/internal/terminal"
 )
 
 // newTestApp creates a minimal App for testing executeCommand.
@@ -202,9 +204,9 @@ func TestCommandWriteQuitUnnamedFlow(t *testing.T) {
 
 	// Now simulate typing the filename and pressing Enter in the prompt.
 	for _, ch := range path {
-		a.handlePromptKey(Key{Type: KeyRune, Rune: ch})
+		a.handlePromptKey(terminal.Key{Type: terminal.KeyRune, Rune: ch})
 	}
-	a.handlePromptKey(Key{Type: KeyEnter})
+	a.handlePromptKey(terminal.Key{Type: terminal.KeyEnter})
 
 	if !a.quit {
 		t.Error("should quit after save-as completes")
@@ -220,7 +222,7 @@ func TestCommandWriteQuitUnnamedCancel(t *testing.T) {
 
 	a.executeCommand("wq")
 	// Cancel the prompt.
-	a.handlePromptKey(Key{Type: KeyEscape})
+	a.handlePromptKey(terminal.Key{Type: terminal.KeyEscape})
 
 	if a.quit {
 		t.Error("should not quit after cancelling save-as")
@@ -399,13 +401,13 @@ func TestHandleDDOperator(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 
 	// Press 'd' once.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
 	if !a.dPending {
 		t.Error("first 'd' should set dPending")
 	}
 
 	// Press 'd' again.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
 	if a.dPending {
 		t.Error("second 'd' should clear dPending")
 	}
@@ -419,8 +421,8 @@ func TestHandleDDCancellation(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"first", "second"}
 
 	// Press 'd' then something else.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'j'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'j'})
 
 	if a.dPending {
 		t.Error("dPending should be cleared by non-d key")
@@ -435,7 +437,7 @@ func TestMotionA(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"hello"}
 	a.currentBuf().cursorCol = 2
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'A'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'A'})
 
 	if a.mode != ModeEdit {
 		t.Error("'A' should enter edit mode")
@@ -450,7 +452,7 @@ func TestMotionCaret(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"   hello"}
 	a.currentBuf().cursorCol = 7
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: '^'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: '^'})
 
 	if a.currentBuf().cursorCol != 3 {
 		t.Errorf("'^' should jump to first non-space, got col %d", a.currentBuf().cursorCol)
@@ -462,7 +464,7 @@ func TestMotionCaretAllSpaces(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"     "}
 	a.currentBuf().cursorCol = 3
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: '^'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: '^'})
 
 	if a.currentBuf().cursorCol != 0 {
 		t.Errorf("'^' on all-space line should go to col 0, got %d", a.currentBuf().cursorCol)
@@ -474,7 +476,7 @@ func TestMotionDollar(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"hello"}
 	a.currentBuf().cursorCol = 0
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: '$'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: '$'})
 
 	if a.currentBuf().cursorCol != 5 {
 		t.Errorf("'$' should jump to end of line, got col %d", a.currentBuf().cursorCol)
@@ -564,12 +566,12 @@ func TestHomeEndDefaultMode(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"hello"}
 	a.currentBuf().cursorCol = 2
 
-	a.handleDefaultKey(Key{Type: KeyHome})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyHome})
 	if a.currentBuf().cursorCol != 0 {
 		t.Errorf("Home in default mode: got col %d", a.currentBuf().cursorCol)
 	}
 
-	a.handleDefaultKey(Key{Type: KeyEnd})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyEnd})
 	if a.currentBuf().cursorCol != 5 {
 		t.Errorf("End in default mode: got col %d", a.currentBuf().cursorCol)
 	}
@@ -581,12 +583,12 @@ func TestHomeEndEditMode(t *testing.T) {
 	a.currentBuf().cursorCol = 2
 	a.mode = ModeEdit
 
-	a.handleEditKey(Key{Type: KeyHome})
+	a.handleEditKey(terminal.Key{Type: terminal.KeyHome})
 	if a.currentBuf().cursorCol != 0 {
 		t.Errorf("Home in edit mode: got col %d", a.currentBuf().cursorCol)
 	}
 
-	a.handleEditKey(Key{Type: KeyEnd})
+	a.handleEditKey(terminal.Key{Type: terminal.KeyEnd})
 	if a.currentBuf().cursorCol != 5 {
 		t.Errorf("End in edit mode: got col %d", a.currentBuf().cursorCol)
 	}
@@ -600,7 +602,7 @@ func TestOCommandInsertLineAbove(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 	a.currentBuf().cursorCol = 3
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'O'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'O'})
 
 	if len(a.currentBuf().buf.Lines) != 4 {
 		t.Fatalf("expected 4 lines after O, got %d", len(a.currentBuf().buf.Lines))
@@ -624,7 +626,7 @@ func TestOCommandAtFirstLine(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"first"}
 	a.currentBuf().cursorLine = 0
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'O'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'O'})
 
 	if len(a.currentBuf().buf.Lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d", len(a.currentBuf().buf.Lines))
@@ -644,13 +646,13 @@ func TestGGMotion(t *testing.T) {
 	a.currentBuf().cursorCol = 5
 
 	// Press 'g' once.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'g'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'g'})
 	if !a.gPending {
 		t.Error("first 'g' should set gPending")
 	}
 
 	// Press 'g' again.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'g'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'g'})
 	if a.gPending {
 		t.Error("second 'g' should clear gPending")
 	}
@@ -668,8 +670,8 @@ func TestGGCancellation(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 
 	// Press 'g' then something else.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'g'})
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'j'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'g'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'j'})
 
 	if a.gPending {
 		t.Error("gPending should be cleared by non-g key")
@@ -685,7 +687,7 @@ func TestGMotion(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 	a.currentBuf().cursorCol = 5
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'G'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'G'})
 
 	if a.currentBuf().cursorLine != 3 {
 		t.Errorf("G should jump to last line (3), got %d", a.currentBuf().cursorLine)
@@ -701,13 +703,13 @@ func TestYYYank(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 
 	// Press 'y' once.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'y'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'y'})
 	if !a.yPending {
 		t.Error("first 'y' should set yPending")
 	}
 
 	// Press 'y' again.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'y'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'y'})
 	if a.yPending {
 		t.Error("second 'y' should clear yPending")
 	}
@@ -725,8 +727,8 @@ func TestYYCancellation(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"first", "second"}
 
 	// Press 'y' then something else.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'y'})
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'j'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'y'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'j'})
 
 	if a.yPending {
 		t.Error("yPending should be cleared by non-y key")
@@ -742,7 +744,7 @@ func TestPasteBelow(t *testing.T) {
 	a.currentBuf().cursorLine = 0
 	a.yankBuffer = "pasted"
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'p'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'p'})
 
 	if len(a.currentBuf().buf.Lines) != 3 {
 		t.Fatalf("expected 3 lines after paste, got %d", len(a.currentBuf().buf.Lines))
@@ -761,7 +763,7 @@ func TestPasteAbove(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 	a.yankBuffer = "pasted"
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'P'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'P'})
 
 	if len(a.currentBuf().buf.Lines) != 3 {
 		t.Fatalf("expected 3 lines after paste, got %d", len(a.currentBuf().buf.Lines))
@@ -782,7 +784,7 @@ func TestPasteEmptyBuffer(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"first"}
 	a.yankBuffer = ""
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'p'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'p'})
 
 	// Should be no-op.
 	if len(a.currentBuf().buf.Lines) != 1 {
@@ -795,8 +797,8 @@ func TestDDPopulatesYankBuffer(t *testing.T) {
 	a.currentBuf().buf.Lines = []string{"first", "second", "third"}
 	a.currentBuf().cursorLine = 1
 
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
 
 	if a.yankBuffer != "second" {
 		t.Errorf("dd should populate yankBuffer, got %q", a.yankBuffer)
@@ -812,11 +814,11 @@ func TestDDThenPaste(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 
 	// Delete second line with dd.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
 
 	// Now paste it back below.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'p'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'p'})
 
 	if len(a.currentBuf().buf.Lines) != 3 {
 		t.Fatalf("expected 3 lines after dd+p, got %d", len(a.currentBuf().buf.Lines))
@@ -832,15 +834,15 @@ func TestUndoWithU(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 
 	// Delete second line with dd.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
 
 	if len(a.currentBuf().buf.Lines) != 2 {
 		t.Fatalf("dd should delete line, got %d lines", len(a.currentBuf().buf.Lines))
 	}
 
 	// Undo with 'u'.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'u'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'u'})
 
 	if len(a.currentBuf().buf.Lines) != 3 {
 		t.Fatalf("u should restore deleted line, got %d lines", len(a.currentBuf().buf.Lines))
@@ -856,18 +858,18 @@ func TestRedoWithCtrlR(t *testing.T) {
 	a.currentBuf().cursorLine = 1
 
 	// Delete second line with dd.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'd'})
 
 	// Undo with 'u'.
-	a.handleDefaultKey(Key{Type: KeyRune, Rune: 'u'})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyRune, Rune: 'u'})
 
 	if len(a.currentBuf().buf.Lines) != 3 {
 		t.Fatalf("expected 3 lines after undo, got %d", len(a.currentBuf().buf.Lines))
 	}
 
 	// Redo with Ctrl+R.
-	a.handleDefaultKey(Key{Type: KeyCtrlR})
+	a.handleDefaultKey(terminal.Key{Type: terminal.KeyCtrlR})
 
 	if len(a.currentBuf().buf.Lines) != 2 {
 		t.Fatalf("Ctrl+R should redo delete, got %d lines", len(a.currentBuf().buf.Lines))

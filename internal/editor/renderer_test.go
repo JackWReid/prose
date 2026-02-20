@@ -1,8 +1,10 @@
-package main
+package editor
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/JackWReid/prose/internal/spell"
 )
 
 func TestRenderFrameContainsText(t *testing.T) {
@@ -209,7 +211,7 @@ func TestApplySpellHighlightingWithOffset(t *testing.T) {
 	// Spell error on "test" at columns 12-16 in the buffer line.
 
 	dl := DisplayLine{BufferLine: 0, Offset: 12, Text: "test"}
-	errors := []SpellError{{Line: 0, StartCol: 12, EndCol: 16, Word: "test"}}
+	errors := []spell.SpellError{{Line: 0, StartCol: 12, EndCol: 16, Word: "test"}}
 
 	result := r.applySpellHighlighting(dl.Text, dl, errors)
 
@@ -229,7 +231,7 @@ func TestApplySpellHighlightingNoBleed(t *testing.T) {
 	// Spell error on "world" at columns 6-11 in buffer line.
 	// Display line 1 starts at offset 12, so the error should NOT appear here.
 	dl := DisplayLine{BufferLine: 0, Offset: 12, Text: "test"}
-	errors := []SpellError{{Line: 0, StartCol: 6, EndCol: 11, Word: "world"}}
+	errors := []spell.SpellError{{Line: 0, StartCol: 6, EndCol: 11, Word: "world"}}
 
 	result := r.applySpellHighlighting(dl.Text, dl, errors)
 
@@ -274,7 +276,7 @@ func TestApplySpellHighlightingFirstDisplayLine(t *testing.T) {
 
 	// Error on first display line (offset 0) should still work
 	dl := DisplayLine{BufferLine: 0, Offset: 0, Text: "hello world"}
-	errors := []SpellError{{Line: 0, StartCol: 6, EndCol: 11, Word: "world"}}
+	errors := []spell.SpellError{{Line: 0, StartCol: 6, EndCol: 11, Word: "world"}}
 
 	result := r.applySpellHighlighting(dl.Text, dl, errors)
 

@@ -1,4 +1,4 @@
-package main
+package editor
 
 // Picker manages the buffer-switching overlay state.
 type Picker struct {

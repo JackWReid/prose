@@ -1,4 +1,4 @@
-package main
+package editor
 
 // Outline manages the document outline overlay state.
 type Outline struct {

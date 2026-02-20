@@ -1,8 +1,10 @@
-package main
+package editor
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/JackWReid/prose/internal/terminal"
 )
 
 func TestFormatLeftFilename(t *testing.T) {
@@ -118,18 +120,18 @@ func TestHandlePromptKeyInput(t *testing.T) {
 	sb := NewStatusBar()
 	sb.StartPrompt(PromptCommand)
 
-	sb.HandlePromptKey(Key{Type: KeyRune, Rune: 'a'})
-	sb.HandlePromptKey(Key{Type: KeyRune, Rune: 'b'})
+	sb.HandlePromptKey(terminal.Key{Type: terminal.KeyRune, Rune: 'a'})
+	sb.HandlePromptKey(terminal.Key{Type: terminal.KeyRune, Rune: 'b'})
 	if sb.PromptText != "ab" {
 		t.Errorf("prompt text: %q", sb.PromptText)
 	}
 
-	sb.HandlePromptKey(Key{Type: KeyBackspace})
+	sb.HandlePromptKey(terminal.Key{Type: terminal.KeyBackspace})
 	if sb.PromptText != "a" {
 		t.Errorf("after backspace: %q", sb.PromptText)
 	}
 
-	text, done, cancelled := sb.HandlePromptKey(Key{Type: KeyEnter})
+	text, done, cancelled := sb.HandlePromptKey(terminal.Key{Type: terminal.KeyEnter})
 	if !done || cancelled || text != "a" {
 		t.Errorf("enter: text=%q, done=%v, cancelled=%v", text, done, cancelled)
 	}
@@ -141,9 +143,9 @@ func TestHandlePromptKeyInput(t *testing.T) {
 func TestHandlePromptKeyCancel(t *testing.T) {
 	sb := NewStatusBar()
 	sb.StartPrompt(PromptCommand)
-	sb.HandlePromptKey(Key{Type: KeyRune, Rune: 'x'})
+	sb.HandlePromptKey(terminal.Key{Type: terminal.KeyRune, Rune: 'x'})
 
-	_, _, cancelled := sb.HandlePromptKey(Key{Type: KeyEscape})
+	_, _, cancelled := sb.HandlePromptKey(terminal.Key{Type: terminal.KeyEscape})
 	if !cancelled {
 		t.Error("escape should cancel")
 	}

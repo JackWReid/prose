@@ -1,9 +1,11 @@
-package main
+package editor
 
 import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/JackWReid/prose/internal/spell"
 )
 
 // Renderer builds a frame buffer and writes it to the terminal in one go.
@@ -25,7 +27,7 @@ func (r *Renderer) RenderFrame(
 	statusLeft string,
 	statusRight string,
 	highlighter Highlighter,
-	spellErrors []SpellError,
+	spellErrors []spell.SpellError,
 	mode Mode,
 	selectionStart int,
 	selectionEnd int,
@@ -441,10 +443,10 @@ func truncateVisibleStr(s string, maxVisible int) string {
 
 // applySpellHighlighting applies light red background highlighting to misspelled words.
 // It inserts ANSI background codes while preserving existing foreground syntax highlighting.
-func (r *Renderer) applySpellHighlighting(text string, displayLine DisplayLine, spellErrors []SpellError) string {
+func (r *Renderer) applySpellHighlighting(text string, displayLine DisplayLine, spellErrors []spell.SpellError) string {
 	// Find errors that overlap with this display line's character range
 	displayEnd := displayLine.Offset + len([]rune(displayLine.Text))
-	var relevantErrors []SpellError
+	var relevantErrors []spell.SpellError
 	for _, err := range spellErrors {
 		if err.Line == displayLine.BufferLine && err.StartCol < displayEnd && err.EndCol > displayLine.Offset {
 			// Clamp to display line bounds and adjust to display-relative columns

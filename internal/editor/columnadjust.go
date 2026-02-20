@@ -1,4 +1,4 @@
-package main
+package editor
 
 // ColumnAdjust manages the column width adjustment overlay state.
 type ColumnAdjust struct {

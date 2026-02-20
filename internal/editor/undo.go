@@ -1,4 +1,4 @@
-package main
+package editor
 
 // OpType describes the kind of edit operation for undo.
 type OpType int

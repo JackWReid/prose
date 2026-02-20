@@ -62,6 +62,12 @@ func (t *Terminal) Resize() bool {
 	return changed
 }
 
+// Width returns the current terminal width.
+func (t *Terminal) Width() int { return t.width }
+
+// Height returns the current terminal height.
+func (t *Terminal) Height() int { return t.height }
+
 // SigwinchChan returns the channel that receives SIGWINCH signals.
 func (t *Terminal) SigwinchChan() <-chan os.Signal {
 	return t.sigwinch

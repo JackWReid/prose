@@ -1,4 +1,4 @@
-package main
+package editor
 
 var DefaultColumnWidth = 60
 

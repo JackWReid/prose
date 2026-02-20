@@ -1,10 +1,13 @@
-package main
+package editor
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/JackWReid/prose/internal/spell"
+	"github.com/JackWReid/prose/internal/terminal"
 )
 
 // Mode represents the editor mode.
@@ -24,12 +27,12 @@ type App struct {
 	viewport         *Viewport
 	renderer         *Renderer
 	statusBar        *StatusBar
-	terminal         *Terminal
+	terminal         *terminal.Terminal
 	picker           *Picker
 	outline          *Outline
 	browser          *Browser
 	columnAdjust     *ColumnAdjust
-	spellChecker     *SpellChecker
+	spellChecker     *spell.SpellChecker
 	spellCheckEnabled bool // Global toggle for spell checking (default: false).
 	mode             Mode
 
@@ -79,7 +82,7 @@ func (a *App) Run() error {
 	}
 
 	// Initialize spell checker.
-	spellChecker, err := NewSpellChecker()
+	spellChecker, err := spell.NewSpellChecker()
 	if err != nil {
 		return fmt.Errorf("failed to initialize spell checker: %v", err)
 	}
@@ -97,14 +100,14 @@ func (a *App) Run() error {
 	}
 
 	// Set up terminal.
-	t, err := NewTerminal()
+	t, err := terminal.NewTerminal()
 	if err != nil {
 		return err
 	}
 	a.terminal = t
 	defer t.Restore()
 
-	a.viewport = NewViewport(t.width, t.height)
+	a.viewport = NewViewport(t.Width(), t.Height())
 
 	// Initial render.
 	a.render()
@@ -120,7 +123,7 @@ func (a *App) Run() error {
 		select {
 		case <-t.SigwinchChan():
 			t.Resize()
-			a.viewport.Resize(t.width, t.height)
+			a.viewport.Resize(t.Width(), t.Height())
 			a.render()
 			continue
 		default:
@@ -140,12 +143,12 @@ func (a *App) Run() error {
 	return nil
 }
 
-func (a *App) handleInput(event InputEvent) {
+func (a *App) handleInput(event terminal.InputEvent) {
 	// Clear any temporary status message on input.
 	a.statusBar.ClearMessage()
 
 	// Handle mouse events.
-	if event.Type == EventMouse {
+	if event.Type == terminal.EventMouse {
 		a.handleMouse(event.Mouse)
 		return
 	}
@@ -193,14 +196,14 @@ func (a *App) handleInput(event InputEvent) {
 	}
 }
 
-func (a *App) handleMouse(mouse MouseEvent) {
+func (a *App) handleMouse(mouse terminal.MouseEvent) {
 	// Ignore mouse events when overlay or prompt is active.
 	if a.columnAdjust.Active || a.outline.Active || a.picker.Active || a.browser.Active || a.statusBar.Prompt != PromptNone {
 		return
 	}
 
 	// Only handle left button press for now.
-	if mouse.Button != MouseLeft || !mouse.Press {
+	if mouse.Button != terminal.MouseLeft || !mouse.Press {
 		return
 	}
 
@@ -213,11 +216,11 @@ func (a *App) handleMouse(mouse MouseEvent) {
 	}
 }
 
-func (a *App) handleDefaultKey(key Key) {
+func (a *App) handleDefaultKey(key terminal.Key) {
 	// ss operator: 's' followed by 's'.
 	if a.sPending {
 		a.sPending = false
-		if key.Type == KeyRune && key.Rune == 's' {
+		if key.Type == terminal.KeyRune && key.Rune == 's' {
 			a.sendCurrentLineToScratch()
 			return
 		}
@@ -228,7 +231,7 @@ func (a *App) handleDefaultKey(key Key) {
 	// Leader key sequence: Space followed by a second key.
 	if a.leaderPending {
 		a.leaderPending = false
-		if key.Type == KeyRune {
+		if key.Type == terminal.KeyRune {
 			switch key.Rune {
 			case 'b', 't':
 				a.picker.Show(a.currentBuffer)
@@ -251,7 +254,7 @@ func (a *App) handleDefaultKey(key Key) {
 	// dd operator: 'd' followed by 'd'.
 	if a.dPending {
 		a.dPending = false
-		if key.Type == KeyRune && key.Rune == 'd' {
+		if key.Type == terminal.KeyRune && key.Rune == 'd' {
 			a.deleteWholeLine()
 			return
 		}
@@ -262,7 +265,7 @@ func (a *App) handleDefaultKey(key Key) {
 	// gg operator: 'g' followed by 'g'.
 	if a.gPending {
 		a.gPending = false
-		if key.Type == KeyRune && key.Rune == 'g' {
+		if key.Type == terminal.KeyRune && key.Rune == 'g' {
 			a.jumpToTop()
 			return
 		}
@@ -273,7 +276,7 @@ func (a *App) handleDefaultKey(key Key) {
 	// yy operator: 'y' followed by 'y'.
 	if a.yPending {
 		a.yPending = false
-		if key.Type == KeyRune && key.Rune == 'y' {
+		if key.Type == terminal.KeyRune && key.Rune == 'y' {
 			a.yankLine()
 			return
 		}
@@ -283,7 +286,7 @@ func (a *App) handleDefaultKey(key Key) {
 
 	eb := a.currentBuf()
 	switch key.Type {
-	case KeyRune:
+	case terminal.KeyRune:
 		switch key.Rune {
 		case ' ':
 			a.leaderPending = true
@@ -304,13 +307,13 @@ func (a *App) handleDefaultKey(key Key) {
 				a.jumpToPrevMatch()
 			}
 		case 'h':
-			a.moveCursor(KeyLeft)
+			a.moveCursor(terminal.KeyLeft)
 		case 'j':
-			a.moveCursor(KeyDown)
+			a.moveCursor(terminal.KeyDown)
 		case 'k':
-			a.moveCursor(KeyUp)
+			a.moveCursor(terminal.KeyUp)
 		case 'l':
-			a.moveCursor(KeyRight)
+			a.moveCursor(terminal.KeyRight)
 		case 'o':
 			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 			a.insertNewline()
@@ -365,34 +368,34 @@ func (a *App) handleDefaultKey(key Key) {
 			a.mode = ModeLineSelect
 			a.lineSelectAnchor = eb.cursorLine
 		}
-	case KeyUp, KeyDown, KeyLeft, KeyRight:
+	case terminal.KeyUp, terminal.KeyDown, terminal.KeyLeft, terminal.KeyRight:
 		a.moveCursor(key.Type)
-	case KeyHome:
+	case terminal.KeyHome:
 		eb.cursorCol = 0
-	case KeyEnd:
+	case terminal.KeyEnd:
 		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
-	case KeyCtrlD:
+	case terminal.KeyCtrlD:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollDown(visibleLines / 2)
-	case KeyCtrlU:
+	case terminal.KeyCtrlU:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollUp(visibleLines / 2)
-	case KeyPgDn:
+	case terminal.KeyPgDn:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollDown(visibleLines)
-	case KeyPgUp:
+	case terminal.KeyPgUp:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollUp(visibleLines)
-	case KeyCtrlZ:
+	case terminal.KeyCtrlZ:
 		a.undoAction()
-	case KeyCtrlY:
+	case terminal.KeyCtrlY:
 		a.redoAction()
-	case KeyCtrlR:
+	case terminal.KeyCtrlR:
 		a.redoAction()
 	}
 }
 
-func (a *App) handleEditKey(key Key) {
+func (a *App) handleEditKey(key terminal.Key) {
 	// Clear any pending operators from Default mode.
 	a.dPending = false
 	a.gPending = false
@@ -401,58 +404,58 @@ func (a *App) handleEditKey(key Key) {
 
 	eb := a.currentBuf()
 	switch key.Type {
-	case KeyEscape:
+	case terminal.KeyEscape:
 		a.mode = ModeDefault
-	case KeyRune:
+	case terminal.KeyRune:
 		a.insertChar(key.Rune)
-	case KeyEnter:
+	case terminal.KeyEnter:
 		a.insertNewline()
-	case KeyBackspace:
+	case terminal.KeyBackspace:
 		a.deleteChar()
-	case KeyDelete:
+	case terminal.KeyDelete:
 		a.deleteCharForward()
-	case KeyUp, KeyDown, KeyLeft, KeyRight:
+	case terminal.KeyUp, terminal.KeyDown, terminal.KeyLeft, terminal.KeyRight:
 		a.moveCursor(key.Type)
-	case KeyHome:
+	case terminal.KeyHome:
 		eb.cursorCol = 0
-	case KeyEnd:
+	case terminal.KeyEnd:
 		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
-	case KeyCtrlD:
+	case terminal.KeyCtrlD:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollDown(visibleLines / 2)
-	case KeyCtrlU:
+	case terminal.KeyCtrlU:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollUp(visibleLines / 2)
-	case KeyPgDn:
+	case terminal.KeyPgDn:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollDown(visibleLines)
-	case KeyPgUp:
+	case terminal.KeyPgUp:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollUp(visibleLines)
-	case KeyCtrlZ:
+	case terminal.KeyCtrlZ:
 		a.undoAction()
-	case KeyCtrlY:
+	case terminal.KeyCtrlY:
 		a.redoAction()
-	case KeyCtrlR:
+	case terminal.KeyCtrlR:
 		a.redoAction()
 	}
 }
 
-func (a *App) handleLineSelectKey(key Key) {
+func (a *App) handleLineSelectKey(key terminal.Key) {
 	eb := a.currentBuf()
 	switch key.Type {
-	case KeyEscape:
+	case terminal.KeyEscape:
 		a.mode = ModeDefault
-	case KeyRune:
+	case terminal.KeyRune:
 		switch key.Rune {
 		case 'h':
-			a.moveCursor(KeyLeft)
+			a.moveCursor(terminal.KeyLeft)
 		case 'j':
-			a.moveCursor(KeyDown)
+			a.moveCursor(terminal.KeyDown)
 		case 'k':
-			a.moveCursor(KeyUp)
+			a.moveCursor(terminal.KeyUp)
 		case 'l':
-			a.moveCursor(KeyRight)
+			a.moveCursor(terminal.KeyRight)
 		case 'y':
 			a.yankSelectedLines()
 			a.mode = ModeDefault
@@ -479,22 +482,22 @@ func (a *App) handleLineSelectKey(key Key) {
 		case '$':
 			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 		}
-	case KeyUp, KeyDown, KeyLeft, KeyRight:
+	case terminal.KeyUp, terminal.KeyDown, terminal.KeyLeft, terminal.KeyRight:
 		a.moveCursor(key.Type)
-	case KeyHome:
+	case terminal.KeyHome:
 		eb.cursorCol = 0
-	case KeyEnd:
+	case terminal.KeyEnd:
 		eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
-	case KeyCtrlD:
+	case terminal.KeyCtrlD:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollDown(visibleLines / 2)
-	case KeyCtrlU:
+	case terminal.KeyCtrlU:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollUp(visibleLines / 2)
-	case KeyPgDn:
+	case terminal.KeyPgDn:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollDown(visibleLines)
-	case KeyPgUp:
+	case terminal.KeyPgUp:
 		visibleLines := a.viewport.VisibleLines(eb.scrollOffset)
 		a.scrollUp(visibleLines)
 	}
@@ -502,49 +505,49 @@ func (a *App) handleLineSelectKey(key Key) {
 	// Handle gg operator
 	if a.gPending {
 		a.gPending = false
-		if key.Type == KeyRune && key.Rune == 'g' {
+		if key.Type == terminal.KeyRune && key.Rune == 'g' {
 			a.jumpToTop()
 		}
 	}
 }
 
-func (a *App) handlePickerKey(key Key) {
+func (a *App) handlePickerKey(key terminal.Key) {
 	switch key.Type {
-	case KeyEscape:
+	case terminal.KeyEscape:
 		a.picker.Hide()
-	case KeyUp:
+	case terminal.KeyUp:
 		a.picker.MoveUp()
-	case KeyDown:
+	case terminal.KeyDown:
 		a.picker.MoveDown(len(a.buffers))
-	case KeyRune:
+	case terminal.KeyRune:
 		switch key.Rune {
 		case 'k':
 			a.picker.MoveUp()
 		case 'j':
 			a.picker.MoveDown(len(a.buffers))
 		}
-	case KeyEnter:
+	case terminal.KeyEnter:
 		a.currentBuffer = a.picker.Selected
 		a.picker.Hide()
 	}
 }
 
-func (a *App) handleOutlineKey(key Key) {
+func (a *App) handleOutlineKey(key terminal.Key) {
 	switch key.Type {
-	case KeyEscape:
+	case terminal.KeyEscape:
 		a.outline.Hide()
-	case KeyUp:
+	case terminal.KeyUp:
 		a.outline.MoveUp()
-	case KeyDown:
+	case terminal.KeyDown:
 		a.outline.MoveDown()
-	case KeyRune:
+	case terminal.KeyRune:
 		switch key.Rune {
 		case 'k':
 			a.outline.MoveUp()
 		case 'j':
 			a.outline.MoveDown()
 		}
-	case KeyEnter:
+	case terminal.KeyEnter:
 		a.jumpToOutlineItem()
 		a.outline.Hide()
 	}
@@ -606,25 +609,25 @@ func (a *App) showColumnAdjust() {
 	a.columnAdjust.Show(a.viewport.TargetColWidth)
 }
 
-func (a *App) handleColumnAdjustKey(key Key) {
+func (a *App) handleColumnAdjustKey(key terminal.Key) {
 	switch key.Type {
-	case KeyEscape:
+	case terminal.KeyEscape:
 		// Cancel — restore original width.
 		a.viewport.TargetColWidth = a.columnAdjust.OrigWidth
 		a.viewport.recalcLayout()
 		a.columnAdjust.Hide()
-	case KeyEnter:
+	case terminal.KeyEnter:
 		// Confirm — keep current width.
 		a.columnAdjust.Hide()
-	case KeyLeft:
+	case terminal.KeyLeft:
 		a.columnAdjust.Decrease()
 		a.viewport.TargetColWidth = a.columnAdjust.Width
 		a.viewport.recalcLayout()
-	case KeyRight:
+	case terminal.KeyRight:
 		a.columnAdjust.Increase(a.viewport.Width)
 		a.viewport.TargetColWidth = a.columnAdjust.Width
 		a.viewport.recalcLayout()
-	case KeyRune:
+	case terminal.KeyRune:
 		switch key.Rune {
 		case 'h':
 			a.columnAdjust.Decrease()
@@ -638,17 +641,17 @@ func (a *App) handleColumnAdjustKey(key Key) {
 	}
 }
 
-func (a *App) handleBrowserKey(key Key) {
+func (a *App) handleBrowserKey(key terminal.Key) {
 	switch key.Type {
-	case KeyEscape:
+	case terminal.KeyEscape:
 		a.browser.Hide()
-	case KeyUp:
+	case terminal.KeyUp:
 		a.browser.MoveUp()
-	case KeyDown:
+	case terminal.KeyDown:
 		a.browser.MoveDown()
-	case KeyLeft:
+	case terminal.KeyLeft:
 		a.navigateToParentDirectory()
-	case KeyRune:
+	case terminal.KeyRune:
 		switch key.Rune {
 		case 'k':
 			a.browser.MoveUp()
@@ -661,7 +664,7 @@ func (a *App) handleBrowserKey(key Key) {
 			a.openBrowserItemNewBuffer()
 			a.browser.Hide()
 		}
-	case KeyEnter:
+	case terminal.KeyEnter:
 		a.openBrowserItem()
 	}
 }
@@ -725,7 +728,7 @@ func (a *App) openBrowserItemNewBuffer() {
 	a.currentBuffer = idx
 }
 
-func (a *App) handlePromptKey(key Key) {
+func (a *App) handlePromptKey(key terminal.Key) {
 	eb := a.currentBuf()
 	switch a.statusBar.Prompt {
 	case PromptSaveNew:
@@ -997,28 +1000,28 @@ func (a *App) deleteChar() {
 func (a *App) moveCursor(dir int) {
 	eb := a.currentBuf()
 	switch dir {
-	case KeyLeft:
+	case terminal.KeyLeft:
 		if eb.cursorCol > 0 {
 			eb.cursorCol--
 		} else if eb.cursorLine > 0 {
 			eb.cursorLine--
 			eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 		}
-	case KeyRight:
+	case terminal.KeyRight:
 		if eb.cursorCol < eb.buf.LineLen(eb.cursorLine) {
 			eb.cursorCol++
 		} else if eb.cursorLine < eb.buf.LineCount()-1 {
 			eb.cursorLine++
 			eb.cursorCol = 0
 		}
-	case KeyUp:
+	case terminal.KeyUp:
 		if eb.cursorLine > 0 {
 			eb.cursorLine--
 			if eb.cursorCol > eb.buf.LineLen(eb.cursorLine) {
 				eb.cursorCol = eb.buf.LineLen(eb.cursorLine)
 			}
 		}
-	case KeyDown:
+	case terminal.KeyDown:
 		if eb.cursorLine < eb.buf.LineCount()-1 {
 			eb.cursorLine++
 			if eb.cursorCol > eb.buf.LineLen(eb.cursorLine) {
