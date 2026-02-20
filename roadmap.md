@@ -74,3 +74,21 @@
 
 ## 1.18
 - Fix end of file hidden below viewport when last line wraps to multiple display lines
+
+## 1.18.1
+- Project restructured into `cmd/` + `internal/` packages (editor, terminal, spell)
+- Added user-facing README with keybinding cheatsheet
+- Single source of truth for version (`VERSION` file + build-time ldflags injection)
+- Version bump checklist (`docs/RELEASING.md`)
+
+## 1.19
+- `{`/`}` paragraph navigation in Default mode
+- `J` to join current line with the line below
+
+## 1.20
+- Personal dictionary. `zg` to add the word under the cursor to a persistent word list. Words in the personal dictionary are not flagged by the spell checker.
+
+## 1.21
+- Spell check suggestions. When the cursor is on a misspelled word, `z=` opens a floating overlay with fuzzy-matched corrections.
+- Adopt XDG Base Directory Specification for all persistent data (config, personal dictionary). Personal dictionary moves to `$XDG_DATA_HOME/prose/dictionary.txt`.
+- Configuration file (`$XDG_CONFIG_HOME/prose/config.toml`). Persist column width, spell check on/off default, and other settings.
