@@ -119,19 +119,16 @@ func (a *App) Run() error {
 			a.currentBuf().PerformSpellCheck(a.spellChecker)
 		}
 
-		// Check for resize signal (non-blocking).
-		select {
-		case <-t.SigwinchChan():
+		event, err := t.ReadEvent()
+		if err != nil {
+			return err
+		}
+
+		if event.Type == terminal.EventResize {
 			t.Resize()
 			a.viewport.Resize(t.Width(), t.Height())
 			a.render()
 			continue
-		default:
-		}
-
-		event, err := t.ReadKey()
-		if err != nil {
-			return err
 		}
 
 		a.handleInput(event)

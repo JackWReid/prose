@@ -250,6 +250,18 @@ func TestParseMouseEvent(t *testing.T) {
 	}
 }
 
+func TestEventResizeType(t *testing.T) {
+	// Verify EventResize is distinct from EventKey and EventMouse.
+	if EventResize == EventKey || EventResize == EventMouse {
+		t.Errorf("EventResize must be distinct: key=%d mouse=%d resize=%d", EventKey, EventMouse, EventResize)
+	}
+	// Verify an EventResize InputEvent can be constructed.
+	ev := InputEvent{Type: EventResize}
+	if ev.Type != EventResize {
+		t.Errorf("expected EventResize, got %d", ev.Type)
+	}
+}
+
 func TestParseInput(t *testing.T) {
 	tests := []struct {
 		name      string

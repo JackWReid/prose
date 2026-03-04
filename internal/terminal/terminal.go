@@ -68,11 +68,6 @@ func (t *Terminal) Width() int { return t.width }
 // Height returns the current terminal height.
 func (t *Terminal) Height() int { return t.height }
 
-// SigwinchChan returns the channel that receives SIGWINCH signals.
-func (t *Terminal) SigwinchChan() <-chan os.Signal {
-	return t.sigwinch
-}
-
 // Restore returns the terminal to its original state.
 func (t *Terminal) Restore() {
 	// Disable mouse protocols.
@@ -97,6 +92,36 @@ func (t *Terminal) ReadKey() (InputEvent, error) {
 		return InputEvent{}, err
 	}
 	return parseInput(buf[:n]), nil
+}
+
+// readResult is an internal type for passing stdin reads through a channel.
+type readResult struct {
+	event InputEvent
+	err   error
+}
+
+// ReadEvent reads the next input event, responding immediately to terminal
+// resize signals (SIGWINCH) even while blocked on stdin. Returns an
+// EventResize event when the terminal is resized.
+func (t *Terminal) ReadEvent() (InputEvent, error) {
+	// Start a goroutine to read from stdin without blocking the select.
+	ch := make(chan readResult, 1)
+	go func() {
+		buf := make([]byte, 32)
+		n, err := os.Stdin.Read(buf)
+		if err != nil {
+			ch <- readResult{err: err}
+			return
+		}
+		ch <- readResult{event: parseInput(buf[:n])}
+	}()
+
+	select {
+	case <-t.sigwinch:
+		return InputEvent{Type: EventResize}, nil
+	case res := <-ch:
+		return res.event, res.err
+	}
 }
 
 // Key types.
@@ -131,6 +156,7 @@ type Key struct {
 const (
 	EventKey = iota
 	EventMouse
+	EventResize
 )
 
 // MouseButton types.
